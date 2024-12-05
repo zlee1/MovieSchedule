@@ -1,0 +1,9 @@
+CREATE TABLE movies(
+    id text primary key
+    ,name text not null
+    ,url text not null unique
+    ,release_year int
+    ,runtime int
+    ,rating text
+    ,image_url text
+);

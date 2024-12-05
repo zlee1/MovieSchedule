@@ -1,0 +1,6 @@
+sqlite3/
+dev_html/
+__pycache__/
+data/
+development/
+geckodriver.*

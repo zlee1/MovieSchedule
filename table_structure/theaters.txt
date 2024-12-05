@@ -1,0 +1,6 @@
+CREATE TABLE theaters(
+    id text primary key
+    ,name text not null
+    ,url text not null unique
+    ,address text
+);

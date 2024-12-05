@@ -1,0 +1,11 @@
+CREATE TABLE showtimes(
+    id text primary key
+    ,movie_id text not null
+    ,theater_id text not null
+    ,url text not null
+    ,date date not null
+    ,time text not null
+    ,format text
+    ,FOREIGN KEY(movie_id) REFERENCES movies(id)
+    ,FOREIGN KEY (theater_id) REFERENCES theaters(id)
+);
