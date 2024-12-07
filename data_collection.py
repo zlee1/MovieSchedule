@@ -4,10 +4,11 @@ from datetime import datetime
 from datetime import timedelta
 import re
 import traceback
-import os
 import pandas as pd
-from pandasql import sqldf
 import sqlite3
+import platform
+import os
+import subprocess
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -18,8 +19,7 @@ import urllib.request
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.common.proxy import Proxy, ProxyType
-from subprocess import CREATE_NO_WINDOW
+# from subprocess import CREATE_NO_WINDOW
 
 
 
@@ -30,20 +30,16 @@ def browser_init():
     selenium browser instance
     """
 
-    # free ssl proxies from https://www.sslproxies.org/
-    ip = '67.43.228.250'
-    port = '26991'
-
-    proxy_ip = f'{ip}:{port}'
-
     options = Options()
 
     #options.add_argument("--headless") # run chrome without opening window
     options.add_argument("--log-level=3") # log only errors
     #options.proxy = Proxy({'proxyType': ProxyType.MANUAL, 'httpProxy' : proxy_ip, 'sslProxy' : proxy_ip})
-
-    service = Service()
-    service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
+    if(platform.system() == 'Linux'):
+        service = Service(executable_path='/snap/bin/geckodriver')
+    else:
+        service = Service()
+    # service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
 
     driver = webdriver.Firefox(options=options, service=service)
     driver.set_page_load_timeout(300)
@@ -62,7 +58,7 @@ def initialize_db(db_name):
     conn = sqlite3.connect(db_name)
     return conn, conn.cursor()
 
-def get_zip_codes(from_file=1, filename='data\\data.txt'):
+def get_zip_codes(from_file=1, filename=None):
     """Get list of zip codes to be used for locating theaters. 
 
     Keyword Arguments:
@@ -72,6 +68,12 @@ def get_zip_codes(from_file=1, filename='data\\data.txt'):
     Returns:
     list - [str zip code, str zip code, str zip code]
     """
+
+    if(filename is None):
+        if(platform.system() == 'Windows'):
+            filename = 'data\\data.txt'
+        else:
+            filename = 'data/data.txt'
 
     if(not from_file):
         zip_codes = []
@@ -205,7 +207,7 @@ def get_movies_from_theater(soup):
 
         movie_year = None
         try:
-            if(re.match('\([0-9][0-9][0-9][0-9]\)', get_text(title_sect)[-5:])):
+            if(re.match('\([0-9]{4}\)', get_text(title_sect)[-5:])):
                 movie_year = int(get_text(title_sect)[-5:].replace('(', '').replace(')', ''))
         except Exception:
             movie_year = None
@@ -384,7 +386,8 @@ if __name__ == '__main__':
 
         driver = browser_init()
 
-        conn, cursor = initialize_db('sqlite3\\moviedb')
+
+        conn, cursor = initialize_db(f'sqlite3{"\\" if platform.system() == 'Windows' else "/"}moviedb')
 
         zip_codes = get_zip_codes(from_file=1)
         theaters = get_theaters(zip_codes)

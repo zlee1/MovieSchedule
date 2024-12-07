@@ -3,4 +3,5 @@ dev_html/
 __pycache__/
 data/
 development/
+.venv/
 geckodriver.*

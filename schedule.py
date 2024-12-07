@@ -3,6 +3,7 @@ import sqlite3
 from duckdb import sql
 import datetime
 import traceback
+import platform
 
 import smtplib
 from email.mime.text import MIMEText
@@ -40,7 +41,7 @@ def send_email(content, subscriber, to, dates=None):
         dates.append((datetime.datetime.today() + datetime.timedelta(days=7)).strftime('%m/%d/%y'))
 
     # read email credentials
-    with open('data\\email_credentials.txt', 'r') as f:
+    with open(f'data{"\\" if platform.system() == 'Windows' else "/"}email_credentials.txt', 'r') as f:
         host = f.readline().replace('\n', '')
         email = f.readline().replace('\n', '')
         password = f.readline().replace('\n', '')
@@ -156,7 +157,7 @@ def showtime_prettify(showtime_df, movie_df, theater_df, include_schedule = True
 if __name__ == '__main__':
     try:
         # connect to database
-        conn, cursor = initialize_db('sqlite3\\moviedb')
+        conn, cursor = initialize_db(f'sqlite3{"\\" if platform.system() == 'Windows' else "/"}moviedb')
 
         # initialize dataframes
         subscribers = pd.read_sql('SELECT * FROM subscribers', conn)
