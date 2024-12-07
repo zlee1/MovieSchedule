@@ -70,10 +70,7 @@ def get_zip_codes(from_file=1, filename=None):
     """
 
     if(filename is None):
-        if(platform.system() == 'Windows'):
-            filename = 'data\\data.txt'
-        else:
-            filename = 'data/data.txt'
+        filename = ('\\' if platform.system() == 'Windows' else '/').join(['data', 'data.txt'])
 
     if(not from_file):
         zip_codes = []
@@ -387,7 +384,7 @@ if __name__ == '__main__':
         driver = browser_init()
 
 
-        conn, cursor = initialize_db(f'sqlite3{"\\" if platform.system() == 'Windows' else "/"}moviedb')
+        conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb']))
 
         zip_codes = get_zip_codes(from_file=1)
         theaters = get_theaters(zip_codes)
