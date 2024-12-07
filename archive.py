@@ -3,6 +3,7 @@ import sqlite3
 from duckdb import sql
 import datetime
 import traceback
+import platform
 
 def initialize_db(db_name):
     """Connect to sqlite3 database
@@ -43,7 +44,7 @@ def delete_history(history, cursor):
 
 if __name__ == '__main__':
     try:
-        conn, cursor = initialize_db('sqlite3\\moviedb')
+        conn, cursor = initialize_db(f'sqlite3{"\\" if platform.system() == 'Windows' else "/"}moviedb')
 
         history = pd.read_sql("""
             SELECT movie_id, theater_id, MIN(date) AS start_date, MAX(date) AS end_date FROM showtimes s
@@ -56,6 +57,8 @@ if __name__ == '__main__':
                 )
                 GROUP BY movie_id, theater_id
                 ORDER BY movie_id, theater_id""", conn)
+        
+        print(f'Archiving {sql("SELECT COUNT(*) AS ct FROM history").df()["ct"].iloc[0]} records from before {pd.read_sql("SELECT DATE(\'now\', \'-1 month\') AS date", conn)["date"].iloc[0]}.')
 
         insert_archive(history, cursor)
 
