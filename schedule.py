@@ -67,6 +67,8 @@ def send_email(content, subscriber, to, dates=None):
 
     server.quit()
 
+    print('schedule sent to', subscriber)
+
 def showtime_prettify(showtime_df, movie_df, theater_df, include_schedule = True, include_titles = False, time_count = False):
     """Create formatted schedule.
     
@@ -139,7 +141,7 @@ def showtime_prettify(showtime_df, movie_df, theater_df, include_schedule = True
             showtime_str += '\n'
 
             for index, row in sql(f'SELECT DISTINCT movie FROM full_df WHERE theater_id = \'{theater_id}\' ORDER BY movie').df().iterrows():
-                showtime_str += f'\t{row["movie"]}' + '\n'
+                showtime_str += f'\t{row["movie"]}' + '\n' # add year?
             
             showtime_str += '\n'
         if(include_schedule):

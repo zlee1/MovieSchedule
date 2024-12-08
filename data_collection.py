@@ -32,13 +32,14 @@ def browser_init():
 
     options = Options()
 
-    #options.add_argument("--headless") # run chrome without opening window
+    options.add_argument("--headless") # run browser without opening window
     options.add_argument("--log-level=3") # log only errors
-    #options.proxy = Proxy({'proxyType': ProxyType.MANUAL, 'httpProxy' : proxy_ip, 'sslProxy' : proxy_ip})
+
     if(platform.system() == 'Linux'):
         service = Service(executable_path='/snap/bin/geckodriver')
     else:
         service = Service()
+        
     # service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
 
     driver = webdriver.Firefox(options=options, service=service)
@@ -204,7 +205,7 @@ def get_movies_from_theater(soup):
 
         movie_year = None
         try:
-            if(re.match('\([0-9]{4}\)', get_text(title_sect)[-5:])):
+            if(re.match(r'\([0-9]{4}\)', get_text(title_sect)[-5:])):
                 movie_year = int(get_text(title_sect)[-5:].replace('(', '').replace(')', ''))
         except Exception:
             movie_year = None
@@ -230,9 +231,6 @@ def get_movies_from_theater(soup):
             else:
                 raw_runtime = info_text.split(', ')[1].replace(' min', '').replace(' ', '').split('hr')
 
-                # if(len(raw_runtime) == 1):
-                #     movie_runtime = int(raw_runtime[0])*60
-                # else:
                 movie_runtime = int(raw_runtime[0])*60 + int(raw_runtime[1])
         except Exception as e:
             movie_runtime = None
@@ -266,7 +264,6 @@ def get_showtimes_from_theater(soup):
             continue;
 
         for showtime_sect in movie.find_all('div', 'thtr-mv-list__amenity-group'):
-            #print(showtime_sect)
             for showtime_btn in showtime_sect.find_all('li', 'showtimes-btn-list__item'):
                 showtime = showtime_btn.find('a')
 
@@ -274,8 +271,6 @@ def get_showtimes_from_theater(soup):
                     continue;
 
                 showtime_url = showtime['href']
-
-                #showtime_id = showtime_url.split('row_count=')[1].split('&')[0]
 
                 movie_id = movie['id'].replace('movie-', '')
 
@@ -392,8 +387,6 @@ if __name__ == '__main__':
         insert_theaters(theaters, cursor)
 
         theater_df = select_all_from_table('theaters', conn)
-
-        #theater_df = sqldf('SELECT * FROM theater_df WHERE name LIKE \'%AMC Marquis 16%\'')
 
         movies, showtimes = get_all_movies_and_showtimes(theater_df, [datetime.now().date() + timedelta(days=i) for i in range(7)], driver)
 
