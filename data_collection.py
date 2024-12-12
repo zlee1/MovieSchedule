@@ -7,8 +7,7 @@ import traceback
 import pandas as pd
 import sqlite3
 import platform
-import os
-import subprocess
+import logging
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -21,6 +20,15 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
 # from subprocess import CREATE_NO_WINDOW
 
+import smtplib
+from email.mime.text import MIMEText
+from email.message import EmailMessage
+
+
+logger = logging.getLogger('data_collection')
+
+log_location = None
+driver_location = None
 
 
 def browser_init():
@@ -35,10 +43,7 @@ def browser_init():
     options.add_argument("--headless") # run browser without opening window
     options.add_argument("--log-level=3") # log only errors
 
-    if(platform.system() == 'Linux'):
-        service = Service(executable_path='/snap/bin/geckodriver')
-    else:
-        service = Service()
+    service = Service(executable_path=driver_location)
         
     # service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
 
@@ -80,14 +85,14 @@ def get_zip_codes(from_file=1, filename=None):
             zip_code = str(input('Enter a zip code (empty for done): ')).strip()
             if(zip_code != ''):
                 zip_codes.append(zip_code)
-        print(f'zip codes: {zip_codes}')
+        logger.info(f'zip codes: {zip_codes}')
         return zip_codes
     else:
         with open(filename, 'r') as f:
             for i in f.readlines():
                 if(i[:3] == 'zip'):
                     zip_codes = re.sub('zip=', '', i).replace('\n', '').split(',')
-                    print(f'zip codes: {zip_codes}')
+                    logger.info(f'zip codes: {zip_codes}')
                     return zip_codes
 
 def get_soup(theater, url, date, browser):
@@ -95,7 +100,7 @@ def get_soup(theater, url, date, browser):
 
     full_url = f'{url}?cmp=theater-module&format=all&date={formatted_date}'
     
-    print(f'current theater: {theater}\ncurrent date: {date}\naddress: {full_url}')
+    logger.info(f'current theater: {theater} | current date: {date} | address: {full_url}')
     
     for i in range(10):
 
@@ -109,7 +114,7 @@ def get_soup(theater, url, date, browser):
         if(container is None):
             break;
         else:
-            print('offline')
+            logger.warning('offline')
             sleep(60)
     return soup
 
@@ -150,7 +155,6 @@ def get_theaters(zip_codes):
             theater_dict['address'] = None
             if(theater_dict not in theater_list):
                 theater_list.append(theater_dict)
-    print(theater_list)
     return theater_list
 
 def insert_theaters(theaters, cursor):
@@ -178,7 +182,7 @@ def get_movies_from_theater(soup):
     container = soup.find('ul', 'thtr-mv-list')
 
     if(container is None):
-        print('no movies found')
+        logger.warning('no movies found')
         return movies
 
     for movie in container.find_all('li'):
@@ -195,7 +199,7 @@ def get_movies_from_theater(soup):
             else:
                 movie_image_url = image_sect['style'].replace('background-image: url(\"', '').replace('\");', '')
         except:
-            print(f'no image found for movie {movie_id}')
+            logger.warning(f'no image found for movie {movie_id}')
             movie_image_url = None
 
         detail_sect = movie.find('div', 'thtr-mv-list__detail')
@@ -209,7 +213,7 @@ def get_movies_from_theater(soup):
                 movie_year = int(get_text(title_sect)[-5:].replace('(', '').replace(')', ''))
         except Exception:
             movie_year = None
-            print(f'year not found for {movie_name}')
+            logger.warning(f'year not found for {movie_name}')
         
         if(movie_year is not None):
             movie_name = movie_name[:-7]
@@ -222,19 +226,19 @@ def get_movies_from_theater(soup):
             movie_rating = info_text.split(', ')[0]
         except Exception as e:
             movie_rating = None
-            print(f'{e}, error with parsing rating')
+            logger.warning(f'{e}, error with parsing rating')
         
         try:
             if('min' not in info_text.split(', ')[1]):
                 movie_runtime = int(info_text.split(', ')[1].replace(' ', '').replace('hr', ''))*60
-                print('hr only runtime: ', movie_runtime)
+                logger.warning(f'hr only runtime {movie_runtime}')
             else:
                 raw_runtime = info_text.split(', ')[1].replace(' min', '').replace(' ', '').split('hr')
 
                 movie_runtime = int(raw_runtime[0])*60 + int(raw_runtime[1])
         except Exception as e:
             movie_runtime = None
-            print(f'{e}, error with parsing runtime from {info_text}')
+            logger.warning(f'{e}, error with parsing runtime from {info_text}')
         
         movies.append(
             {
@@ -256,7 +260,7 @@ def get_showtimes_from_theater(soup):
     container = soup.find('ul', 'thtr-mv-list')
 
     if(container is None):
-        print('no showtimes found')
+        logger.warning('no movies found')
         return showtimes
 
     for movie in container.find_all('li'):
@@ -370,47 +374,131 @@ def insert_showtimes(showtimes, cursor):
 
         cursor.execute(query)
 
+def run():
 
-
-
-if __name__ == '__main__':
     try:
-
+        logger.info('Initializing browser')
         driver = browser_init()
 
-
+        logger.info('Connecting to database')
         conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb']))
 
         zip_codes = get_zip_codes(from_file=1)
+        
+        logger.info('Collecting theaters')
         theaters = get_theaters(zip_codes)
 
+        logger.info('Inserting theater data to db')
         insert_theaters(theaters, cursor)
 
         theater_df = select_all_from_table('theaters', conn)
 
+        logger.info('Collecting movies and showtimes')
         movies, showtimes = get_all_movies_and_showtimes(theater_df, [datetime.now().date() + timedelta(days=i) for i in range(7)], driver)
 
-        print(movies)
-
+        logger.info('Inserting movie data to db')
         insert_movies(movies, cursor)
 
+        logger.info('Inserting showtime data to db')
         insert_showtimes(showtimes, cursor)
 
-        movie_df = select_all_from_table('movies', conn)
+        # movie_df = select_all_from_table('movies', conn)
 
-        showtime_df = select_all_from_table('showtimes', conn)
+        # showtime_df = select_all_from_table('showtimes', conn)
 
-        print(theater_df)
-        print('\n')
-        print(movie_df)
-        print('\n')
-        print(showtime_df)
-        print('\n')
-
+        logger.info('Committing db changes')
         conn.commit()
 
     except Exception:
-        print(traceback.format_exc())
+        logging.error(traceback.format_exc())
+        success = 0
+    else:
+        success = 1
     finally:
         conn.close()
         driver.close()
+        logger.info('Closed db connection and webdriver')
+        return success
+
+
+def send_failure_email():
+    # read email credentials
+    with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'email_credentials.txt']), 'r') as f:
+        host = f.readline().replace('\n', '')
+        email = f.readline().replace('\n', '')
+        password = f.readline().replace('\n', '')
+        error_email = f.readline().replace('\n', '')
+
+    msg = EmailMessage()
+
+    msg['From'] = email
+    msg['To'] = error_email
+    msg['Subject'] = f'Movie Theater Data Collection Failed at {datetime.now().strftime("%m/%d/%Y %H:%M:%S")}' 
+
+
+    with open(log_location, 'r') as f:
+        log = f.read()
+
+    msg.set_content('Please check logs for more information.')
+
+    msg.attach(MIMEText(log))
+
+    # initialize smtp connection
+    server = smtplib.SMTP(host, 587)
+    server.ehlo()
+    server.starttls()
+    server.ehlo()
+    server.login(email, password)
+
+    server.send_message(msg)
+
+    server.quit()
+
+    logger.info('Failure notification sent')
+
+
+
+if __name__ == '__main__':
+
+    with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'file_locations.txt']), 'r') as f:
+        file_locations = f.read().splitlines()
+
+    for i in file_locations:
+        if(i.startswith('log=')):
+            log_location = i.split('log=')[1]
+        elif(i.startswith('driver=')):
+            driver_location = i.split('driver=')[1]
+
+    if(log_location is None):
+        warnings.warn('No log provided, creating new log')
+        with open('movie_schedule.log', 'w+') as f:
+            f.write('LOG NOT PROVIDED, NEW LOG CREATED')
+    if(driver_location is None):
+        raise Exception('WebDriver not provided. Please add WebDriver filepath to data/file_locations.txt on a new line in the format of "driver=<filepath>"')
+
+    logging.basicConfig(filename=log_location, level=logging.INFO)
+    logger.info('Starting')
+
+    sleep_value = 600
+    for i in range(3):
+        logger.info(f'Run - starting attempt {i}')
+        try:
+            success = run()
+        except Exception:
+            logger.error(traceback.format_exc())
+            success = 0
+
+        if(success):
+            logger.info(f'Run - attempt {i} successful')
+            break
+        else:
+            logger.info(f'Run - attempt {i} failed; sleeping for {sleep_value} seconds')
+            sleep(sleep_value)
+    
+    if(not success):
+        logger.info('Did not run successfully - sending failure notification')
+        send_failure_email()
+    
+    logger.info('Finished')
+
+    send_failure_email()

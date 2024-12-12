@@ -4,6 +4,7 @@ __pycache__/
 data/
 development/
 .venv/
+logs/
 *.sh
 geckodriver.*
 schedule.html
