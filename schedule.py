@@ -156,6 +156,31 @@ def showtime_prettify(showtime_df, movie_df, theater_df, include_schedule = True
             showtime_str += '\n'
     return showtime_str
 
+def schedule_simple(showtime_df, movie_df, theater_df, new_this_week, limited_showings):
+    schedule = ''
+    for theater_index, theater_row in theater_df.iterrows():
+        schedule += theater_row['name'] + '\n'
+
+        movies = sql(f"""
+                     SELECT DISTINCT 
+                        s.movie_id
+                        ,m.name
+                        ,CASE WHEN n.movie_id IS NOT NULL THEN 1 ELSE 0 END AS new
+                        ,CASE WHEN l.movie_id IS NOT NULL THEN 1 ELSE 0 END AS limited
+                        ,(SELECT COUNT(*) FROM showtime_df s2 GROUP BY s2.movie_id, s2.theater_id HAVING s2.movie_id = s.movie_id AND s2.theater_id = s.theater_id) AS num_showings
+                     FROM showtime_df s 
+                     INNER JOIN movie_df m ON s.movie_id = m.id 
+                     LEFT JOIN new_this_week n ON m.id = n.movie_id AND n.theater_id = s.theater_id
+                     LEFT JOIN limited_showings l ON l.movie_id = m.id AND l.theater_id = s.theater_id
+                     WHERE s.theater_id = \'{theater_row["id"]}\' 
+                     ORDER BY m.name""").df()
+
+        for index, row in movies.iterrows():
+            schedule += f"""{'+' if row['new'] else ' '}{'*' if row['limited'] else ' '}{row['name']} [x{row["num_showings"]}]\n"""
+        
+        schedule += '\n'
+    return schedule
+
 if __name__ == '__main__':
     try:
         # connect to database
@@ -168,7 +193,7 @@ if __name__ == '__main__':
         all_movies = pd.read_sql('SELECT * FROM movies', conn)
         # only include showtimes that occur within next week
         all_showtimes = pd.read_sql('SELECT * FROM showtimes WHERE CAST(strftime(\'%s\', date) AS integer) > CAST(strftime(\'%s\', DATE()) AS integer)', conn)
-        # showtimes for movies that have not been shown prior to this week. 
+        # showtimes for movies that have not been shown more than 2 days prior to this week (2-day grace period accounts for early access screenings and thursday previews). 
         # currently does not handle rereleases, but old data is archived monthly so this is not likely to become a problem
         all_new_this_week = pd.read_sql("""
                                         SELECT * FROM showtimes s 
@@ -177,44 +202,46 @@ if __name__ == '__main__':
                                                     WHERE 1=1
                                                         AND s2.movie_id = s.movie_id 
                                                         AND s2.theater_id = s.theater_id
-                                                        AND CAST(strftime(\'%s\', s2.date) AS integer) <= CAST(strftime(\'%s\', DATE()) AS integer))""", conn)
+                                                        AND CAST(strftime(\'%s\', s2.date) AS integer) <= CAST(strftime(\'%s\', DATE(\'now\', \'-2 days\')) AS integer))""", conn)
 
 
         # generate schedule and send email for each subscriber
         for index, row in subscribers.iterrows():
-            schedule_string = ''
+            # schedule_string = ''
 
             subscriber = row['id']
 
             # ids of theaters that the subscriber subscribes to
             theater_ids = list(sql(f'SELECT theater_id FROM subscriptions WHERE subscriber_id = {subscriber}').df()['theater_id'])
 
-            # data only includes theaters that the subscriber subscribes to
+            # # data only includes theaters that the subscriber subscribes to
             theaters = sql(f'SELECT * FROM all_theaters WHERE id IN {theater_ids}').df()
             showtimes = sql(f'SELECT * FROM all_showtimes WHERE theater_id IN {theater_ids}').df()
             new_this_week = sql(f'SELECT * FROM all_new_this_week WHERE theater_id IN {theater_ids}').df()
             # only movies with 3 or less screenings at a particular theater in the next week. if something is showing 5 times at one theater, but 2 at another, it will be included here only for the theater with 2 screenings
             limited_showings = sql('SELECT movie_id, theater_id, COUNT(*) AS count FROM showtimes GROUP BY movie_id, theater_id HAVING COUNT(*) <= 3 ORDER BY theater_id, movie_id').df()
             
-            # plain text schedule for movies that are new in theaters
-            schedule_string += 'NEW THIS WEEK'
-            schedule_string += '\n\n'
-            schedule_string += showtime_prettify(sql('SELECT * FROM new_this_week').df(), all_movies, all_theaters, include_schedule=False, include_titles=True)
+            # # plain text schedule for movies that are new in theaters
+            # schedule_string += 'NEW THIS WEEK'
+            # schedule_string += '\n\n'
+            # schedule_string += showtime_prettify(sql('SELECT * FROM new_this_week').df(), all_movies, all_theaters, include_schedule=False, include_titles=True)
 
-            # plain text schedule for movies that have 3 or less screenings at a particular theater in the next week
-            schedule_string += '\n\n'
-            schedule_string += 'LIMITED SHOWTIMES'
-            schedule_string += '\n\n'
-            schedule_string += showtime_prettify(sql('SELECT * FROM showtimes WHERE CONCAT(movie_id, theater_id) IN (SELECT CONCAT(movie_id, theater_id) FROM limited_showings)').df(), all_movies, theaters, include_titles=True, time_count=False)
+            # # plain text schedule for movies that have 3 or less screenings at a particular theater in the next week
+            # schedule_string += '\n\n'
+            # schedule_string += 'LIMITED SHOWTIMES'
+            # schedule_string += '\n\n'
+            # schedule_string += showtime_prettify(sql('SELECT * FROM showtimes WHERE CONCAT(movie_id, theater_id) IN (SELECT CONCAT(movie_id, theater_id) FROM limited_showings)').df(), all_movies, theaters, include_titles=True, time_count=False)
 
-            # plain text schedule for all screenings
-            schedule_string += '\n\n'
-            schedule_string += 'FULL SCHEDULE'
-            schedule_string += '\n\n'
-            schedule_string += showtime_prettify(showtimes, all_movies, theaters, include_titles=False, time_count=True)
+            # # plain text schedule for all screenings
+            # schedule_string += '\n\n'
+            # schedule_string += 'FULL SCHEDULE'
+            # schedule_string += '\n\n'
+            # schedule_string += showtime_prettify(showtimes, all_movies, theaters, include_titles=False, time_count=True)
             
             # email the plain text schedule to the subscriber
-            send_email(schedule_string, row['name'], row['email'])
+            schedule = schedule_simple(showtimes, all_movies, theaters, new_this_week, limited_showings)
+            send_email(schedule, row['name'], row['email'])
+            
     except Exception:
         print(traceback.format_exc())
     finally:
