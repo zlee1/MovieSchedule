@@ -8,6 +8,7 @@ import platform
 import smtplib
 from email.mime.text import MIMEText
 from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
 
 def initialize_db(db_name):
     """Connect to sqlite3 database
@@ -21,13 +22,14 @@ def initialize_db(db_name):
     conn = sqlite3.connect(db_name)
     return conn, conn.cursor()
 
-def send_email(content, subscriber, to, dates=None):
+def send_email(content, subscriber, to, html=False, dates=None):
     """Send generated schedule to subscriber
 
     Keyword arguments:
     content - generated movie schedule
     subscriber - name of the subscriber
     to - email address of subscriber
+    html - whether the email should be sent as html
     dates - [start date of schedule, end date of schedule]
 
     Returns:
@@ -46,15 +48,20 @@ def send_email(content, subscriber, to, dates=None):
         email = f.readline().replace('\n', '')
         password = f.readline().replace('\n', '')
         
-    msg = EmailMessage()
+    msg = MIMEMultipart()
 
     msg['From'] = email
     msg['To'] = to
     msg['Subject'] = f'Movie Theater Schedule: {dates[0]} - {dates[1]}' 
 
-    header = f'Hi {subscriber}, here is your weekly movie theater rundown:'
+    # header = f'Hi {subscriber}, here is your weekly movie theater rundown:'
 
-    msg.set_content(header + '\n\n' + content)
+    # msg.set_content(header + '\n\n' + content)
+
+    if(html):
+        msg.attach(MIMEText(content, 'html'))
+    else:
+        msg.attach(MIMEText(content, 'plain'))
 
     # initialize smtp connection
     server = smtplib.SMTP(host, 587)
@@ -63,7 +70,7 @@ def send_email(content, subscriber, to, dates=None):
     server.ehlo()
     server.login(email, password)
 
-    server.send_message(msg)
+    server.sendmail(email, to, msg.as_string())
 
     server.quit()
 
@@ -176,15 +183,70 @@ def schedule_simple(showtime_df, movie_df, theater_df, new_this_week, limited_sh
                      ORDER BY m.name""").df()
 
         for index, row in movies.iterrows():
-            schedule += f"""{'+' if row['new'] else ' '}{'*' if row['limited'] else ' '}{row['name']} [x{row["num_showings"]}]\n"""
+            schedule += f"""{'+' if row['new'] else ' '}{'*' if row['limited'] else ' '} {row['name']} [x{row["num_showings"]}]\n"""
         
         schedule += '\n'
     return schedule
 
+def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limited_showings, subscriber):
+    schedule = """
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: 'Consolas', monospace;
+        }
+        h1 {
+            font-size: 18px;
+        }
+        p {
+            font-size: 14px;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <p>Hi, %s! Here is your weekly theatrical breakdown:</p>
+
+    <br>
+
+    <p>Showings new this week are <b>bolded</b></p>
+    <p>Showings with 3 or fewer screenings are <span style="color:#AA0000">red</span></p>
+
+    <br>
+""" % subscriber
+    for theater_index, theater_row in theater_df.iterrows():
+        schedule += f"\t<h1>{theater_row['name']}</h1>\n"
+
+        movies = sql(f"""
+                     SELECT DISTINCT 
+                        s.movie_id
+                        ,m.name
+                        ,CASE WHEN n.movie_id IS NOT NULL THEN 1 ELSE 0 END AS new
+                        ,CASE WHEN l.movie_id IS NOT NULL THEN 1 ELSE 0 END AS limited
+                        ,(SELECT COUNT(*) FROM showtime_df s2 GROUP BY s2.movie_id, s2.theater_id HAVING s2.movie_id = s.movie_id AND s2.theater_id = s.theater_id) AS num_showings
+                     FROM showtime_df s 
+                     INNER JOIN movie_df m ON s.movie_id = m.id 
+                     LEFT JOIN new_this_week n ON m.id = n.movie_id AND n.theater_id = s.theater_id
+                     LEFT JOIN limited_showings l ON l.movie_id = m.id AND l.theater_id = s.theater_id
+                     WHERE s.theater_id = \'{theater_row["id"]}\' 
+                     ORDER BY m.name""").df()
+
+        for index, row in movies.iterrows():
+            schedule += f"""\t<p{' style="color:#AA0000"' if row['limited'] else ''}>{'<b>' if row['new'] else ''}{row['name']} [x{row["num_showings"]}]{'</b>' if row['new'] else ''}</p>\n"""
+        
+        schedule += '<br>'
+
+    schedule += '</body>\n</html>'
+    return schedule 
+
 if __name__ == '__main__':
     try:
         # connect to database
-        conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb']))
+        conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb'])) 
 
         # initialize dataframes
         subscribers = pd.read_sql('SELECT * FROM subscribers', conn)
@@ -239,9 +301,10 @@ if __name__ == '__main__':
             # schedule_string += showtime_prettify(showtimes, all_movies, theaters, include_titles=False, time_count=True)
             
             # email the plain text schedule to the subscriber
-            schedule = schedule_simple(showtimes, all_movies, theaters, new_this_week, limited_showings)
-            send_email(schedule, row['name'], row['email'])
-            
+            # schedule = schedule_simple(showtimes, all_movies, theaters, new_this_week, limited_showings)
+            schedule = schedule_simple_html(showtimes, all_movies, theaters, new_this_week, limited_showings, subscriber=row['name'])
+            send_email(schedule, row['name'], row['email'], html=True)
+
     except Exception:
         print(traceback.format_exc())
     finally:
