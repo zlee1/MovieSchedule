@@ -1,6 +1,5 @@
 CREATE TABLE subscriptions(
     subscriber_id integer not null
-    ,theater_id text not null
+    ,zip_code text not null
     ,FOREIGN KEY(subscriber_id) REFERENCES subscribers(id)
-    ,FOREIGN KEY(theater_id) REFERENCES theaters(id)
 );

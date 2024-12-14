@@ -1,0 +1,6 @@
+CREATE TABLE zip_codes(
+    zip_code text not null
+    ,theater_id text not null
+    ,FOREIGN KEY (theater_id) REFERENCES theaters(id)
+    ,UNIQUE(zip_code, theater_id)
+);

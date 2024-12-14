@@ -64,7 +64,7 @@ def initialize_db(db_name):
     conn = sqlite3.connect(db_name)
     return conn, conn.cursor()
 
-def get_zip_codes(from_file=1, filename=None):
+def get_zip_codes(conn):
     """Get list of zip codes to be used for locating theaters. 
 
     Keyword Arguments:
@@ -75,25 +75,27 @@ def get_zip_codes(from_file=1, filename=None):
     list - [str zip code, str zip code, str zip code]
     """
 
-    if(filename is None):
-        filename = ('\\' if platform.system() == 'Windows' else '/').join(['data', 'data.txt'])
+    # if(filename is None):
+    #     filename = ('\\' if platform.system() == 'Windows' else '/').join(['data', 'data.txt'])
 
-    if(not from_file):
-        zip_codes = []
-        zip_code = None
-        while zip_code != '':
-            zip_code = str(input('Enter a zip code (empty for done): ')).strip()
-            if(zip_code != ''):
-                zip_codes.append(zip_code)
-        logger.info(f'zip codes: {zip_codes}')
-        return zip_codes
-    else:
-        with open(filename, 'r') as f:
-            for i in f.readlines():
-                if(i[:3] == 'zip'):
-                    zip_codes = re.sub('zip=', '', i).replace('\n', '').split(',')
-                    logger.info(f'zip codes: {zip_codes}')
-                    return zip_codes
+    # if(not from_file):
+    #     zip_codes = []
+    #     zip_code = None
+    #     while zip_code != '':
+    #         zip_code = str(input('Enter a zip code (empty for done): ')).strip()
+    #         if(zip_code != ''):
+    #             zip_codes.append(zip_code)
+    #     logger.info(f'zip codes: {zip_codes}')
+    #     return zip_codes
+    # else:
+    #     with open(filename, 'r') as f:
+    #         for i in f.readlines():
+    #             if(i[:3] == 'zip'):
+    #                 zip_codes = re.sub('zip=', '', i).replace('\n', '').split(',')
+    #                 logger.info(f'zip codes: {zip_codes}')
+    #                 return zip_codes
+
+    return list(pd.read_sql('SELECT DISTINCT zip_code FROM subscriptions', conn)['zip_code'])
 
 def get_soup(theater, url, date, browser):
     formatted_date = date.strftime('%Y-%m-%d')
@@ -106,7 +108,7 @@ def get_soup(theater, url, date, browser):
 
         browser.get(full_url)
 
-        sleep(random.randint(10, 45))
+        sleep(random.randint(5, 10))
 
         soup = BeautifulSoup(browser.page_source, 'html.parser')
 
@@ -124,7 +126,19 @@ def get_text(soup):
 def select_all_from_table(tablename, conn):
     return pd.read_sql_query(f'SELECT * FROM {tablename}', conn)
 
-def get_theaters(zip_codes):
+def insert_zip_code(zip_code, theater_id, cursor):
+    
+    query = f"""
+        INSERT OR IGNORE INTO zip_codes(zip_code, theater_id)
+        VALUES(
+            \'{zip_code}\'
+            ,\'{theater_id}\'
+        );
+        """
+    
+    cursor.execute(query)
+
+def get_theaters(zip_codes, cursor):
     """Get list of all theaters that appear in search for each provided zip code.
 
     Keyword arguments:
@@ -155,6 +169,9 @@ def get_theaters(zip_codes):
             theater_dict['address'] = None
             if(theater_dict not in theater_list):
                 theater_list.append(theater_dict)
+
+            logger.info(f'Adding {theater_dict["name"]} for zip code {zip_code}')
+            insert_zip_code(zip_code, theater_dict['id'], cursor)
     return theater_list
 
 def insert_theaters(theaters, cursor):
@@ -163,7 +180,7 @@ def insert_theaters(theaters, cursor):
         INSERT INTO theaters(id, name, url, address)
         VALUES(
             \'{theater.get('id')}\'
-            ,\'{theater.get('name')}\'
+            ,\'{theater.get('name').replace('\'', '\'\'')}\'
             ,\'{theater.get('url') if theater.get('url') != None else ''}\'
             ,\'\'
         )
@@ -383,10 +400,10 @@ def run():
         logger.info('Connecting to database')
         conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb']))
 
-        zip_codes = get_zip_codes(from_file=1)
+        zip_codes = get_zip_codes(conn)
         
         logger.info('Collecting theaters')
-        theaters = get_theaters(zip_codes)
+        theaters = get_theaters(zip_codes, cursor)
 
         logger.info('Inserting theater data to db')
         insert_theaters(theaters, cursor)
@@ -441,7 +458,7 @@ def send_failure_email():
 
     msg.set_content('Please check logs for more information.')
 
-    msg.attach(MIMEText(log))
+    #msg.attach(MIMEText(log))
 
     # initialize smtp connection
     server = smtplib.SMTP(host, 587)
@@ -459,6 +476,7 @@ def send_failure_email():
 
 
 if __name__ == '__main__':
+    start_time = datetime.now()
 
     with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'file_locations.txt']), 'r') as f:
         file_locations = f.read().splitlines()
@@ -477,7 +495,7 @@ if __name__ == '__main__':
         raise Exception('WebDriver not provided. Please add WebDriver filepath to data/file_locations.txt on a new line in the format of "driver=<filepath>"')
 
     logging.basicConfig(filename=log_location, level=logging.INFO)
-    logger.info('Starting')
+    logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
 
     sleep_value = 600
     for i in range(3):
@@ -498,7 +516,7 @@ if __name__ == '__main__':
     if(not success):
         logger.info('Did not run successfully - sending failure notification')
         send_failure_email()
-    
-    logger.info('Finished')
 
-    send_failure_email()
+    end_time = datetime.now()
+    
+    logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()}')

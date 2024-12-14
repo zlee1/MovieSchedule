@@ -35,19 +35,22 @@ def send_email(content, subscriber, to, html=False, dates=None):
     Returns:
     None
     """
-
+    
+    # print('dates')
     # default date range is 1 week starting on day of program run
     if(dates is None):
         dates = []
         dates.append((datetime.datetime.today()).strftime('%m/%d/%y'))
-        dates.append((datetime.datetime.today() + datetime.timedelta(days=7)).strftime('%m/%d/%y'))
-
+        dates.append((datetime.datetime.today() + datetime.timedelta(days=6)).strftime('%m/%d/%y'))
+    
+    # print('creds')
     # read email credentials
     with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'email_credentials.txt']), 'r') as f:
         host = f.readline().replace('\n', '')
         email = f.readline().replace('\n', '')
         password = f.readline().replace('\n', '')
-        
+    
+    # print('msg')
     msg = MIMEMultipart()
 
     msg['From'] = email
@@ -64,14 +67,18 @@ def send_email(content, subscriber, to, html=False, dates=None):
         msg.attach(MIMEText(content, 'plain'))
 
     # initialize smtp connection
+    # print('connecting')
     server = smtplib.SMTP(host, 587)
     server.ehlo()
     server.starttls()
     server.ehlo()
+    
+    # print('logging in')
     server.login(email, password)
-
+    
+    # print('sending')
     server.sendmail(email, to, msg.as_string())
-
+    
     server.quit()
 
     print('schedule sent to', subscriber)
@@ -251,6 +258,7 @@ if __name__ == '__main__':
         # initialize dataframes
         subscribers = pd.read_sql('SELECT * FROM subscribers', conn)
         subscriptions = pd.read_sql('SELECT * FROM subscriptions', conn)
+        zip_codes = pd.read_sql('SELECT * FROM zip_codes', conn)
         all_theaters = pd.read_sql('SELECT * FROM theaters', conn)
         all_movies = pd.read_sql('SELECT * FROM movies', conn)
         # only include showtimes that occur within next week
@@ -274,7 +282,7 @@ if __name__ == '__main__':
             subscriber = row['id']
 
             # ids of theaters that the subscriber subscribes to
-            theater_ids = list(sql(f'SELECT theater_id FROM subscriptions WHERE subscriber_id = {subscriber}').df()['theater_id'])
+            theater_ids = list(sql(f'SELECT DISTINCT z.theater_id FROM subscribers s INNER JOIN subscriptions sub ON s.id = sub.subscriber_id INNER JOIN zip_codes z ON z.zip_code = sub.zip_code WHERE sub.subscriber_id = {subscriber} ORDER BY zip_code').df()['theater_id'])
 
             # # data only includes theaters that the subscriber subscribes to
             theaters = sql(f'SELECT * FROM all_theaters WHERE id IN {theater_ids}').df()
