@@ -3,4 +3,5 @@ CREATE TABLE theaters(
     ,name text not null
     ,url text not null unique
     ,address text
+    ,date_updated date
 );

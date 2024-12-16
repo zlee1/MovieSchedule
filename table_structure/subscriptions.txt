@@ -1,5 +1,6 @@
 CREATE TABLE subscriptions(
     subscriber_id integer not null
     ,zip_code text not null
+    ,active integer not null default 1
     ,FOREIGN KEY(subscriber_id) REFERENCES subscribers(id)
 );

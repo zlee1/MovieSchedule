@@ -5,6 +5,7 @@ data/
 development/
 .venv/
 logs/
+todo.txt
 *.sh
 geckodriver.*
 schedule.html

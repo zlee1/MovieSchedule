@@ -257,7 +257,7 @@ if __name__ == '__main__':
 
         # initialize dataframes
         subscribers = pd.read_sql('SELECT * FROM subscribers', conn)
-        subscriptions = pd.read_sql('SELECT * FROM subscriptions', conn)
+        subscriptions = pd.read_sql('SELECT * FROM subscriptions WHERE active = 1', conn)
         zip_codes = pd.read_sql('SELECT * FROM zip_codes', conn)
         all_theaters = pd.read_sql('SELECT * FROM theaters', conn)
         all_movies = pd.read_sql('SELECT * FROM movies', conn)
@@ -276,16 +276,20 @@ if __name__ == '__main__':
 
 
         # generate schedule and send email for each subscriber
-        for index, row in subscribers.iterrows():
+        for index, row in subscriptions.iterrows():
             # schedule_string = ''
 
-            subscriber = row['id']
+            subscriber_id = row['subscriber_id']
+
+            subscriber = sql(f'SELECT name, email FROM subscribers WHERE id = {subscriber_id};').df()
+            subscriber_name = subscriber['name'][0]
+            subscriber_email = subscriber['email'][0]
 
             # ids of theaters that the subscriber subscribes to
-            theater_ids = list(sql(f'SELECT DISTINCT z.theater_id FROM subscribers s INNER JOIN subscriptions sub ON s.id = sub.subscriber_id INNER JOIN zip_codes z ON z.zip_code = sub.zip_code WHERE sub.subscriber_id = {subscriber} ORDER BY zip_code').df()['theater_id'])
+            theater_ids = list(sql(f'SELECT DISTINCT z.theater_id FROM subscribers s INNER JOIN subscriptions sub ON s.id = sub.subscriber_id INNER JOIN zip_codes z ON z.zip_code = sub.zip_code WHERE sub.subscriber_id = {subscriber_id} ORDER BY z.zip_code').df()['theater_id'])
 
             # # data only includes theaters that the subscriber subscribes to
-            theaters = sql(f'SELECT * FROM all_theaters WHERE id IN {theater_ids}').df()
+            theaters = sql(f'SELECT * FROM all_theaters WHERE id IN {theater_ids} ORDER BY name').df()
             showtimes = sql(f'SELECT * FROM all_showtimes WHERE theater_id IN {theater_ids}').df()
             new_this_week = sql(f'SELECT * FROM all_new_this_week WHERE theater_id IN {theater_ids}').df()
             # only movies with 3 or less screenings at a particular theater in the next week. if something is showing 5 times at one theater, but 2 at another, it will be included here only for the theater with 2 screenings
@@ -310,8 +314,8 @@ if __name__ == '__main__':
             
             # email the plain text schedule to the subscriber
             # schedule = schedule_simple(showtimes, all_movies, theaters, new_this_week, limited_showings)
-            schedule = schedule_simple_html(showtimes, all_movies, theaters, new_this_week, limited_showings, subscriber=row['name'])
-            send_email(schedule, row['name'], row['email'], html=True)
+            schedule = schedule_simple_html(showtimes, all_movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
+            send_email(schedule, subscriber_name, subscriber_email, html=True)
 
     except Exception:
         print(traceback.format_exc())

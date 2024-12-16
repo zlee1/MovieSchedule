@@ -8,6 +8,7 @@ import pandas as pd
 import sqlite3
 import platform
 import logging
+import os
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -37,6 +38,7 @@ def browser_init():
     Returns:
     selenium browser instance
     """
+    logger.info('Creating new browser instance')
 
     options = Options()
 
@@ -50,6 +52,8 @@ def browser_init():
     driver = webdriver.Firefox(options=options, service=service)
     driver.set_page_load_timeout(300)
     
+    logger.info('New browser created')
+
     return driver
 
 def initialize_db(db_name):
@@ -95,7 +99,9 @@ def get_zip_codes(conn):
     #                 logger.info(f'zip codes: {zip_codes}')
     #                 return zip_codes
 
-    return list(pd.read_sql('SELECT DISTINCT zip_code FROM subscriptions', conn)['zip_code'])
+    # logger.info(list(pd.read_sql('SELECT DISTINCT zip_code FROM subscriptions', conn)['zip_code']))
+
+    return list(pd.read_sql('SELECT DISTINCT zip_code FROM subscriptions WHERE active=1;', conn)['zip_code'])
 
 def get_soup(theater, url, date, browser):
     formatted_date = date.strftime('%Y-%m-%d')
@@ -138,7 +144,7 @@ def insert_zip_code(zip_code, theater_id, cursor):
     
     cursor.execute(query)
 
-def get_theaters(zip_codes, cursor):
+def get_theaters(zip_codes, conn, cursor):
     """Get list of all theaters that appear in search for each provided zip code.
 
     Keyword arguments:
@@ -148,7 +154,7 @@ def get_theaters(zip_codes, cursor):
     list - [ { id : theater id , name : theater name , url : theater url } ]
     """
 
-    theater_list = [] # theater name : theater page url
+    theater_list = []
     for zip_code in zip_codes:
         url = f'https://www.fandango.com/{zip_code}_movietimes'
 
@@ -172,9 +178,11 @@ def get_theaters(zip_codes, cursor):
 
             logger.info(f'Adding {theater_dict["name"]} for zip code {zip_code}')
             insert_zip_code(zip_code, theater_dict['id'], cursor)
-    return theater_list
+    
+    logger.info('Inserting theater data')
+    insert_theaters(theater_list, conn, cursor)
 
-def insert_theaters(theaters, cursor):
+def insert_theaters(theaters, conn, cursor):
     for theater in theaters:
         query = f"""
         INSERT INTO theaters(id, name, url, address)
@@ -192,6 +200,8 @@ def insert_theaters(theaters, cursor):
         """
 
         cursor.execute(query)
+
+    conn.commit()
 
 def get_movies_from_theater(soup):
     movies = []
@@ -329,19 +339,46 @@ def get_showtimes_from_theater(soup):
 
     return showtimes
 
-def get_all_movies_and_showtimes(theaters, dates, browser):
-    movies = []
-    showtimes = []
+def get_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=False):
+    # skip theaters that have showtime data one week away - these have already gone through the data collection process
+    # smaller theaters that do not have screenings one week away but do have screenings within the following week will be rechecked in this scenario, but this is uncommon and shouldn't be an issue
+    if(not redo):
+        skip_theaters = list(pd.read_sql('SELECT DISTINCT id FROM theaters WHERE date_updated = CURRENT_DATE', conn)['id'])
+    else:
+        skip_theaters = []
     for index, row in theaters.iterrows():
+        # logger.info(f'Theater switching to {row["name"]}')
+        if(row['id'] in skip_theaters):
+            logger.info(f'Skipping theater {row["name"]} - data already collected')
+            continue;
+
+        new_movies = []
+        new_showtimes = []
         for date in dates:
             soup = get_soup(row['name'], row['url'], date, browser)
             
-            movies += get_movies_from_theater(soup)
-            showtimes += get_showtimes_from_theater(soup)
-    
-    return movies, showtimes
+            new_movies = get_movies_from_theater(soup)
+            new_showtimes = get_showtimes_from_theater(soup)
+        
+        logger.info(f'Inserting movies and showtimes for {row["name"]}')
+        if(new_movies != []):
+            insert_movies(new_movies, conn, cursor)
+        if(new_showtimes != []):
+            insert_showtimes(new_showtimes, conn, cursor)
 
-def insert_movies(movies, cursor):
+        logger.info(f'Updating theater date_updated for {row["name"]}')
+        theater_date_update(row['id'], conn, cursor)
+
+        # logger.info('Closing browser')
+        # browser.quit()
+
+        # browser = browser_init()
+
+def theater_date_update(theater_id, conn, cursor):
+    cursor.execute(f"UPDATE theaters SET date_updated = CURRENT_DATE WHERE id=\'{theater_id}\';")
+    conn.commit()
+
+def insert_movies(movies, conn, cursor):
     for movie in movies:
         query = f"""
         INSERT INTO movies(id, name, url, release_year, runtime, rating, image_url)
@@ -365,8 +402,9 @@ def insert_movies(movies, cursor):
         """
 
         cursor.execute(query)
+    conn.commit()
 
-def insert_showtimes(showtimes, cursor):
+def insert_showtimes(showtimes, conn, cursor):
     for showtime in showtimes:
         query = f"""
         INSERT INTO showtimes(id, movie_id, theater_id, url, date, time, format)
@@ -385,13 +423,18 @@ def insert_showtimes(showtimes, cursor):
             ,date = COALESCE(excluded.date, date)
             ,time = COALESCE(excluded.time, time)
             ,format = COALESCE(excluded.format, format)
+            ,date_inserted = CURRENT_DATE
             WHERE url = excluded.url
         ;
         """
 
         cursor.execute(query)
 
+    conn.commit()
+
 def run():
+    conn = None
+    driver = None
 
     try:
         logger.info('Initializing browser')
@@ -403,28 +446,28 @@ def run():
         zip_codes = get_zip_codes(conn)
         
         logger.info('Collecting theaters')
-        theaters = get_theaters(zip_codes, cursor)
+        theaters = get_theaters(zip_codes, conn, cursor)
 
-        logger.info('Inserting theater data to db')
-        insert_theaters(theaters, cursor)
-
-        theater_df = select_all_from_table('theaters', conn)
+        # logger.info('Inserting theater data to db')
+        # insert_theaters(theaters, conn, cursor)
+        zip_code_str = ','.join([f"\'{i}\'" for i in zip_codes])
+        theater_df = pd.read_sql(f'SELECT * FROM theaters t INNER JOIN zip_codes z ON z.theater_id = t.id WHERE z.zip_code IN ({zip_code_str})', conn)
 
         logger.info('Collecting movies and showtimes')
-        movies, showtimes = get_all_movies_and_showtimes(theater_df, [datetime.now().date() + timedelta(days=i) for i in range(7)], driver)
+        get_all_movies_and_showtimes(theater_df, [datetime.now().date() + timedelta(days=i) for i in range(7)], driver, conn, cursor, redo=False)
 
-        logger.info('Inserting movie data to db')
-        insert_movies(movies, cursor)
+        # logger.info('Inserting movie data to db')
+        # insert_movies(movies, cursor)
 
-        logger.info('Inserting showtime data to db')
-        insert_showtimes(showtimes, cursor)
+        # logger.info('Inserting showtime data to db')
+        # insert_showtimes(showtimes, cursor)
 
         # movie_df = select_all_from_table('movies', conn)
 
         # showtime_df = select_all_from_table('showtimes', conn)
 
-        logger.info('Committing db changes')
-        conn.commit()
+        # logger.info('Committing db changes')
+        # conn.commit()
 
     except Exception:
         logging.error(traceback.format_exc())
@@ -432,8 +475,11 @@ def run():
     else:
         success = 1
     finally:
-        conn.close()
-        driver.close()
+        try: conn.close() 
+        except: pass
+        try: driver.close()
+        except: pass
+
         logger.info('Closed db connection and webdriver')
         return success
 
@@ -487,18 +533,26 @@ if __name__ == '__main__':
         elif(i.startswith('driver=')):
             driver_location = i.split('driver=')[1]
 
-    if(log_location is None):
-        warnings.warn('No log provided, creating new log')
-        with open('movie_schedule.log', 'w+') as f:
-            f.write('LOG NOT PROVIDED, NEW LOG CREATED')
+    log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.now().strftime("%d%m%Y")}.log'])
+    if(not os.path.isfile(log_location)):
+        open(log_location, 'w+')
+    else:
+        with open(log_location, 'a') as f:
+            f.write('\n\n\n')
+
+    # if(log_location is None):
+    #     warnings.warn('No log provided, creating new log')
+    #     with open('movie_schedule.log', 'w+') as f:
+    #         f.write('LOG NOT PROVIDED, NEW LOG CREATED')
+
     if(driver_location is None):
         raise Exception('WebDriver not provided. Please add WebDriver filepath to data/file_locations.txt on a new line in the format of "driver=<filepath>"')
 
     logging.basicConfig(filename=log_location, level=logging.INFO)
     logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
 
-    sleep_value = 600
-    for i in range(3):
+    sleep_value = 30
+    for i in range(1, 11):
         logger.info(f'Run - starting attempt {i}')
         try:
             success = run()
@@ -519,4 +573,4 @@ if __name__ == '__main__':
 
     end_time = datetime.now()
     
-    logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()}')
+    logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
