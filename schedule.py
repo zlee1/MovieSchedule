@@ -195,7 +195,7 @@ def schedule_simple(showtime_df, movie_df, theater_df, new_this_week, limited_sh
         schedule += '\n'
     return schedule
 
-def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limited_showings, subscriber):
+def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limited_showings, subscriber, by='both'):
     schedule = """
 <html>
 
@@ -205,6 +205,9 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
             font-family: 'Consolas', monospace;
         }
         h1 {
+            font-size: 22px;
+        }
+        h2 {
             font-size: 18px;
         }
         p {
@@ -225,28 +228,61 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
 
     <br>
 """ % subscriber
-    for theater_index, theater_row in theater_df.iterrows():
-        schedule += f"\t<h1>{theater_row['name']}</h1>\n"
 
-        movies = sql(f"""
-                     SELECT DISTINCT 
-                        s.movie_id
-                        ,m.name
-                        ,CASE WHEN n.movie_id IS NOT NULL THEN 1 ELSE 0 END AS new
-                        ,CASE WHEN l.movie_id IS NOT NULL THEN 1 ELSE 0 END AS limited
-                        ,(SELECT COUNT(*) FROM showtime_df s2 GROUP BY s2.movie_id, s2.theater_id HAVING s2.movie_id = s.movie_id AND s2.theater_id = s.theater_id) AS num_showings
-                     FROM showtime_df s 
-                     INNER JOIN movie_df m ON s.movie_id = m.id 
-                     LEFT JOIN new_this_week n ON m.id = n.movie_id AND n.theater_id = s.theater_id
-                     LEFT JOIN limited_showings l ON l.movie_id = m.id AND l.theater_id = s.theater_id
-                     WHERE s.theater_id = \'{theater_row["id"]}\' 
-                     ORDER BY m.name""").df()
+    # movies_and_theaters = sql('SELECT m.id AS movie_id, m.name AS movie_name, t.id AS theater_id, t.name AS theater_name FROM showtime_df s INNER JOIN movie_df m ON m.id = s.movie_id INNER JOIN theater_df t ON t.id = s.theater_id GROUP BY m.id, m.name, t.id, t.name ORDER BY m.name, t.name').df()
 
-        for index, row in movies.iterrows():
-            schedule += f"""\t<p{' style="color:#AA0000"' if row['limited'] else ''}>{'<b>' if row['new'] else ''}{row['name']} [x{row["num_showings"]}]{'</b>' if row['new'] else ''}</p>\n"""
+    # for movie in movies_and_theaters['movie_id'].unique():
+    #     movie_name = sql(f'SELECT DISTINCT movie_name FROM movies_and_theaters WHERE movie_id=\'{movie}\'').df()['movie_name'][0]
+    #     theater_names = list(sql(f'SELECT DISTINCT theater_name FROM movies_and_theaters WHERE movie_id=\'{movie}\' ORDER BY theater_name').df()['theater_name'])
+    #     schedule += '\t<details>\n\t\t<summary>' + movie_name + '</summary>\n'
+    #     for theater in theater_names:
+    #         schedule += '\t\t<span>' + theater + '</span>' + '<br>\n'
+    #     schedule += '\t</details>\n'
+    
+    # schedule += '\n'
+
+    if(by in ['both', 'theater']):
+        for theater_index, theater_row in theater_df.iterrows():
+            schedule += f"\t<h2>{theater_row['name']}</h2>\n"
+
+            movies = sql(f"""
+                        SELECT DISTINCT 
+                            s.movie_id
+                            ,m.name
+                            ,CASE WHEN n.movie_id IS NOT NULL THEN 1 ELSE 0 END AS new
+                            ,CASE WHEN l.movie_id IS NOT NULL THEN 1 ELSE 0 END AS limited
+                            ,(SELECT COUNT(*) FROM showtime_df s2 GROUP BY s2.movie_id, s2.theater_id HAVING s2.movie_id = s.movie_id AND s2.theater_id = s.theater_id) AS num_showings
+                        FROM showtime_df s 
+                        INNER JOIN movie_df m ON s.movie_id = m.id 
+                        LEFT JOIN new_this_week n ON m.id = n.movie_id AND n.theater_id = s.theater_id
+                        LEFT JOIN limited_showings l ON l.movie_id = m.id AND l.theater_id = s.theater_id
+                        WHERE s.theater_id = \'{theater_row["id"]}\' 
+                        ORDER BY m.name""").df()
+
+            for index, row in movies.iterrows():
+                schedule += f"""\t<p{' style="color:#AA0000"' if row['limited'] else ''}>{'<b>' if row['new'] else ''}{row['name']} [x{row["num_showings"]}]{'</b>' if row['new'] else ''}</p>\n"""
+            
+    if(by == 'both'):
+        schedule += '<br><br><br><h1>Breakdown by Film</h1>'
+
+    if(by in ['both', 'movie']):
+        for movie_index, movie_row in movie_df.iterrows():
+            schedule += f"\t<h2>{movie_row['name']}</h2>\n"
+
+            theaters = sql(f"""
+                        SELECT DISTINCT 
+                            t.id
+                            ,t.name
+                            ,COUNT(*) AS num_showings
+                        FROM showtime_df s
+                        INNER JOIN theater_df t ON t.id = s.theater_id
+                        WHERE s.movie_id = \'{movie_row["id"]}\'
+                        GROUP BY t.id, t.name""").df()
+
+            for index, row in theaters.iterrows():
+                schedule += f"""\t<p>{row['name']} [x{row["num_showings"]}]</p>\n"""
         
-        schedule += '<br>'
-
+    
     schedule += '</body>\n</html>'
     return schedule 
 
@@ -291,6 +327,7 @@ if __name__ == '__main__':
             # # data only includes theaters that the subscriber subscribes to
             theaters = sql(f'SELECT * FROM all_theaters WHERE id IN {theater_ids} ORDER BY name').df()
             showtimes = sql(f'SELECT * FROM all_showtimes WHERE theater_id IN {theater_ids}').df()
+            movies = sql(f'SELECT * FROM all_movies WHERE id IN (SELECT movie_id FROM showtimes)').df()
             new_this_week = sql(f'SELECT * FROM all_new_this_week WHERE theater_id IN {theater_ids}').df()
             # only movies with 3 or less screenings at a particular theater in the next week. if something is showing 5 times at one theater, but 2 at another, it will be included here only for the theater with 2 screenings
             limited_showings = sql('SELECT movie_id, theater_id, COUNT(*) AS count FROM showtimes GROUP BY movie_id, theater_id HAVING COUNT(*) <= 3 ORDER BY theater_id, movie_id').df()
@@ -314,7 +351,7 @@ if __name__ == '__main__':
             
             # email the plain text schedule to the subscriber
             # schedule = schedule_simple(showtimes, all_movies, theaters, new_this_week, limited_showings)
-            schedule = schedule_simple_html(showtimes, all_movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
+            schedule = schedule_simple_html(showtimes, movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
             send_email(schedule, subscriber_name, subscriber_email, html=True)
 
     except Exception:

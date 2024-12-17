@@ -42,8 +42,9 @@ def browser_init():
 
     options = Options()
 
-    options.add_argument("--headless") # run browser without opening window
+    # options.add_argument("--headless=new") # run browser without opening window
     options.add_argument("--log-level=3") # log only errors
+    options.add_argument('--blink-settings=imagesEnabled=false') # prevent image loading (?)
 
     service = Service(executable_path=driver_location)
         
@@ -343,9 +344,10 @@ def get_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=Fa
     # skip theaters that have showtime data one week away - these have already gone through the data collection process
     # smaller theaters that do not have screenings one week away but do have screenings within the following week will be rechecked in this scenario, but this is uncommon and shouldn't be an issue
     if(not redo):
-        skip_theaters = list(pd.read_sql('SELECT DISTINCT id FROM theaters WHERE date_updated = CURRENT_DATE', conn)['id'])
+        skip_theaters = list(pd.read_sql('SELECT DISTINCT id FROM theaters WHERE date_updated = DATE(\'now\', \'localtime\')', conn)['id'])
     else:
         skip_theaters = []
+
     for index, row in theaters.iterrows():
         # logger.info(f'Theater switching to {row["name"]}')
         if(row['id'] in skip_theaters):
@@ -552,7 +554,7 @@ if __name__ == '__main__':
     logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
 
     sleep_value = 30
-    for i in range(1, 11):
+    for i in range(1, 21):
         logger.info(f'Run - starting attempt {i}')
         try:
             success = run()
