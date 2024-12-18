@@ -298,7 +298,7 @@ if __name__ == '__main__':
         all_theaters = pd.read_sql('SELECT * FROM theaters', conn)
         all_movies = pd.read_sql('SELECT * FROM movies', conn)
         # only include showtimes that occur within next week
-        all_showtimes = pd.read_sql('SELECT * FROM showtimes WHERE CAST(strftime(\'%s\', date) AS integer) > CAST(strftime(\'%s\', DATE()) AS integer)', conn)
+        all_showtimes = pd.read_sql('SELECT * FROM showtimes WHERE CAST(strftime(\'%s\', date) AS integer) > CAST(strftime(\'%s\', DATE(\'now\', \'localtime\')) AS integer)', conn)
         # showtimes for movies that have not been shown more than 2 days prior to this week (2-day grace period accounts for early access screenings and thursday previews). 
         # currently does not handle rereleases, but old data is archived monthly so this is not likely to become a problem
         all_new_this_week = pd.read_sql("""
@@ -308,7 +308,7 @@ if __name__ == '__main__':
                                                     WHERE 1=1
                                                         AND s2.movie_id = s.movie_id 
                                                         AND s2.theater_id = s.theater_id
-                                                        AND CAST(strftime(\'%s\', s2.date) AS integer) <= CAST(strftime(\'%s\', DATE(\'now\', \'-2 days\')) AS integer))""", conn)
+                                                        AND CAST(strftime(\'%s\', s2.date) AS integer) <= CAST(strftime(\'%s\', DATE(\'now\', \'-2 days\', \'localtime\')) AS integer))""", conn)
 
 
         # generate schedule and send email for each subscriber

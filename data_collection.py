@@ -357,6 +357,9 @@ def get_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=Fa
         new_movies = []
         new_showtimes = []
         for date in dates:
+            if(date <= datetime.strptime(row['date_updated'], '%Y-%m-%d').date()+timedelta(days=6)):
+                logger.info(f'Skipping date {datetime.strftime(date, "%Y-%m-%d")} for theater {row["name"]} - data already collected.')
+                continue
             soup = get_soup(row['name'], row['url'], date, browser)
             
             new_movies = get_movies_from_theater(soup)
