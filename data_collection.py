@@ -31,6 +31,8 @@ logger = logging.getLogger('data_collection')
 log_location = None
 driver_location = None
 
+progress_made = False
+
 
 def browser_init():
     """Create Selenium browser instance.
@@ -42,7 +44,7 @@ def browser_init():
 
     options = Options()
 
-    # options.add_argument("--headless=new") # run browser without opening window
+    # options.add_argument("--headless=new") # run browser without opening window - commented because it seems to crash raspberry pi
     options.add_argument("--log-level=3") # log only errors
     options.add_argument('--blink-settings=imagesEnabled=false') # prevent image loading (?)
 
@@ -203,6 +205,8 @@ def insert_theaters(theaters, conn, cursor):
         cursor.execute(query)
 
     conn.commit()
+    global progress_made
+    progress_made = True
 
 def get_movies_from_theater(soup):
     movies = []
@@ -357,7 +361,7 @@ def get_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=Fa
         new_movies = []
         new_showtimes = []
         for date in dates:
-            if(date <= datetime.strptime(row['date_updated'], '%Y-%m-%d').date()+timedelta(days=6)):
+            if(row['date_updated'] is not None and date <= datetime.strptime(row['date_updated'], '%Y-%m-%d').date()+timedelta(days=6)):
                 logger.info(f'Skipping date {datetime.strftime(date, "%Y-%m-%d")} for theater {row["name"]} - data already collected.')
                 continue
             soup = get_soup(row['name'], row['url'], date, browser)
@@ -382,6 +386,8 @@ def get_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=Fa
 def theater_date_update(theater_id, conn, cursor):
     cursor.execute(f"UPDATE theaters SET date_updated = CURRENT_DATE WHERE id=\'{theater_id}\';")
     conn.commit()
+    global progress_made
+    progress_made = True
 
 def insert_movies(movies, conn, cursor):
     for movie in movies:
@@ -408,6 +414,8 @@ def insert_movies(movies, conn, cursor):
 
         cursor.execute(query)
     conn.commit()
+    global progress_made
+    progress_made = True
 
 def insert_showtimes(showtimes, conn, cursor):
     for showtime in showtimes:
@@ -436,6 +444,8 @@ def insert_showtimes(showtimes, conn, cursor):
         cursor.execute(query)
 
     conn.commit()
+    global progress_made
+    progress_made = True
 
 def run():
     conn = None
@@ -557,8 +567,13 @@ if __name__ == '__main__':
     logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
 
     sleep_value = 30
-    for i in range(1, 21):
-        logger.info(f'Run - starting attempt {i}')
+
+    success = 0
+    no_progress_ct = 0
+    runs = 0
+    while not success and no_progress_ct <= 10:
+        runs += 1
+        logger.info(f'Run - starting attempt {runs}')
         try:
             success = run()
         except Exception:
@@ -566,10 +581,16 @@ if __name__ == '__main__':
             success = 0
 
         if(success):
-            logger.info(f'Run - attempt {i} successful')
+            logger.info(f'Run - attempt {runs} successful')
             break
         else:
-            logger.info(f'Run - attempt {i} failed; sleeping for {sleep_value} seconds')
+            logger.info(f'Run - attempt {runs} failed; sleeping for {sleep_value} seconds')
+            if(progress_made):
+                no_progress_ct = 0
+                progress_made = False
+            else:
+                no_progress_ct += 1
+                logger.warning(f'No progress made in run {runs} - number of consecutive runs without progress is now {no_progress_ct}')
             sleep(sleep_value)
     
     if(not success):
@@ -579,3 +600,4 @@ if __name__ == '__main__':
     end_time = datetime.now()
     
     logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
+
