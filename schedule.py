@@ -4,11 +4,15 @@ from duckdb import sql
 import datetime
 import traceback
 import platform
+import logging
+import os
 
 import smtplib
 from email.mime.text import MIMEText
 from email.message import EmailMessage
 from email.mime.multipart import MIMEMultipart
+
+logger = logging.getLogger('schedule')
 
 def initialize_db(db_name):
     """Connect to sqlite3 database
@@ -36,30 +40,23 @@ def send_email(content, subscriber, to, html=False, dates=None):
     None
     """
     
-    # print('dates')
     # default date range is 1 week starting on day of program run
     if(dates is None):
         dates = []
         dates.append((datetime.datetime.today()).strftime('%m/%d/%y'))
         dates.append((datetime.datetime.today() + datetime.timedelta(days=6)).strftime('%m/%d/%y'))
     
-    # print('creds')
     # read email credentials
     with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'email_credentials.txt']), 'r') as f:
         host = f.readline().replace('\n', '')
         email = f.readline().replace('\n', '')
         password = f.readline().replace('\n', '')
     
-    # print('msg')
     msg = MIMEMultipart()
 
     msg['From'] = email
     msg['To'] = to
     msg['Subject'] = f'Movie Theater Schedule: {dates[0]} - {dates[1]}' 
-
-    # header = f'Hi {subscriber}, here is your weekly movie theater rundown:'
-
-    # msg.set_content(header + '\n\n' + content)
 
     if(html):
         msg.attach(MIMEText(content, 'html'))
@@ -67,21 +64,18 @@ def send_email(content, subscriber, to, html=False, dates=None):
         msg.attach(MIMEText(content, 'plain'))
 
     # initialize smtp connection
-    # print('connecting')
     server = smtplib.SMTP(host, 587)
     server.ehlo()
     server.starttls()
     server.ehlo()
     
-    # print('logging in')
     server.login(email, password)
     
-    # print('sending')
     server.sendmail(email, to, msg.as_string())
     
     server.quit()
 
-    print('schedule sent to', subscriber)
+    logger.info(f'Schedule sent to {subscriber}')
 
 def showtime_prettify(showtime_df, movie_df, theater_df, include_schedule = True, include_titles = False, time_count = False):
     """Create formatted schedule.
@@ -209,39 +203,31 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
         }
         h2 {
             font-size: 18px;
+            margin-bottom: 0;
         }
         p {
             font-size: 14px;
             margin: 0;
+            padding-left: 20px;
         }
     </style>
 </head>
 
 <body>
 
-    <p>Hi, %s! Here is your weekly theatrical breakdown:</p>
+    <p style="padding-left: 0;">Hi, %s! Here is your weekly theatrical breakdown:</p>
 
     <br>
 
-    <p>Showings new this week are <b>bolded</b></p>
-    <p>Showings with 3 or fewer screenings are <span style="color:#AA0000">red</span></p>
+    <p style="padding-left: 0;">Showings new this week are <b>bolded</b></p>
+    <p style="padding-left: 0;">Showings with 3 or fewer screenings are <span style="color:#AA0000">red</span></p>
 
     <br>
 """ % subscriber
 
-    # movies_and_theaters = sql('SELECT m.id AS movie_id, m.name AS movie_name, t.id AS theater_id, t.name AS theater_name FROM showtime_df s INNER JOIN movie_df m ON m.id = s.movie_id INNER JOIN theater_df t ON t.id = s.theater_id GROUP BY m.id, m.name, t.id, t.name ORDER BY m.name, t.name').df()
-
-    # for movie in movies_and_theaters['movie_id'].unique():
-    #     movie_name = sql(f'SELECT DISTINCT movie_name FROM movies_and_theaters WHERE movie_id=\'{movie}\'').df()['movie_name'][0]
-    #     theater_names = list(sql(f'SELECT DISTINCT theater_name FROM movies_and_theaters WHERE movie_id=\'{movie}\' ORDER BY theater_name').df()['theater_name'])
-    #     schedule += '\t<details>\n\t\t<summary>' + movie_name + '</summary>\n'
-    #     for theater in theater_names:
-    #         schedule += '\t\t<span>' + theater + '</span>' + '<br>\n'
-    #     schedule += '\t</details>\n'
-    
-    # schedule += '\n'
-
     if(by in ['both', 'theater']):
+        schedule += '<h1>Breakdown by Theater</h1>'
+
         for theater_index, theater_row in theater_df.iterrows():
             movies = sql(f"""
                         SELECT DISTINCT 
@@ -256,9 +242,7 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
                         LEFT JOIN limited_showings l ON l.movie_id = m.id AND l.theater_id = s.theater_id
                         WHERE s.theater_id = \'{theater_row["id"]}\' 
                         ORDER BY m.name""").df()
-            
-            # new_theater = sql(f'SELECT MIN(date) < DATE(\'now\', \'-6 days\', \'localtime\') FROM showtime_df WHERE theater_id={theater_row["id"]} GROUP BY theater_id').
-            
+                        
             if(len(movies) == 0):
                 continue
             else:
@@ -271,21 +255,26 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
         schedule += '<br><br><br><h1>Breakdown by Film</h1>'
 
     if(by in ['both', 'movie']):
-        for movie_index, movie_row in movie_df.iterrows():
+        for movie_index, movie_row in movie_df.sort_values(by=['name'], inplace=False).iterrows():
             schedule += f"\t<h2>{movie_row['name']}</h2>\n"
 
             theaters = sql(f"""
                         SELECT DISTINCT 
                             t.id
                             ,t.name
-                            ,COUNT(*) AS num_showings
+                            ,CASE WHEN n.theater_id IS NOT NULL THEN 1 ELSE 0 END AS new
+                            ,CASE WHEN l.theater_id IS NOT NULL THEN 1 ELSE 0 END AS limited
+                            ,(SELECT COUNT(*) FROM showtime_df s2 GROUP BY s2.movie_id, s2.theater_id HAVING s2.movie_id = s.movie_id AND s2.theater_id = s.theater_id) AS num_showings
                         FROM showtime_df s
                         INNER JOIN theater_df t ON t.id = s.theater_id
+                        LEFT JOIN new_this_week n ON n.movie_id = s.movie_id AND n.theater_id = t.id
+                        LEFT JOIN limited_showings l ON l.movie_id = s.movie_id AND l.theater_id = t.id
                         WHERE s.movie_id = \'{movie_row["id"]}\'
-                        GROUP BY t.id, t.name""").df()
-
+                        --GROUP BY t.id, t.name, s.movie_id
+                        ORDER BY t.name""").df()
+            
             for index, row in theaters.iterrows():
-                schedule += f"""\t<p>{row['name']} [x{row["num_showings"]}]</p>\n"""
+                schedule += f"""\t<p{' style="color:#AA0000"' if row['limited'] else ''}>{'<b>' if row['new'] else ''}{row['name']} [x{row["num_showings"]}]{'</b>' if row['new'] else ''}</p>\n"""
         
     
     schedule += '</body>\n</html>'
@@ -293,9 +282,24 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
 
 if __name__ == '__main__':
     try:
+        start_time = datetime.datetime.now()
+        
+        # setting up logging
+        log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.now().strftime("%d%m%Y")}.log'])
+        if(not os.path.isfile(log_location)):
+            open(log_location, 'w+')
+        else:
+            with open(log_location, 'a') as f:
+                f.write('\n\n\n')
+
+        logging.basicConfig(filename=log_location, level=logging.INFO)
+        logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
+
+        logger.info('Initializing database connection')
         # connect to database
         conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb'])) 
 
+        logger.info('Initializing dataframes')
         # initialize dataframes
         subscribers = pd.read_sql('SELECT * FROM subscribers', conn)
         subscriptions = pd.read_sql('SELECT * FROM subscriptions WHERE active = 1', conn)
@@ -323,9 +327,9 @@ if __name__ == '__main__':
                                         """, conn)
 
 
+        logger.info('Starting schedule process')
         # generate schedule and send email for each subscriber
         for index, row in subscriptions.iterrows():
-            # schedule_string = ''
 
             subscriber_id = row['subscriber_id']
 
@@ -333,6 +337,9 @@ if __name__ == '__main__':
             subscriber_name = subscriber['name'][0]
             subscriber_email = subscriber['email'][0]
 
+            logger.info(f'Schedule for {subscriber_name}')
+
+            logger.info('Gathering subscription-specific data')
             # ids of theaters that the subscriber subscribes to
             theater_ids = list(sql(f'SELECT DISTINCT z.theater_id FROM subscribers s INNER JOIN subscriptions sub ON s.id = sub.subscriber_id INNER JOIN zip_codes z ON z.zip_code = sub.zip_code WHERE sub.subscriber_id = {subscriber_id} ORDER BY z.zip_code').df()['theater_id'])
 
@@ -344,29 +351,17 @@ if __name__ == '__main__':
             # only movies with 3 or less screenings at a particular theater in the next week. if something is showing 5 times at one theater, but 2 at another, it will be included here only for the theater with 2 screenings
             limited_showings = sql('SELECT movie_id, theater_id, COUNT(*) AS count FROM showtimes GROUP BY movie_id, theater_id HAVING COUNT(*) <= 3 ORDER BY theater_id, movie_id').df()
             
-            # # plain text schedule for movies that are new in theaters
-            # schedule_string += 'NEW THIS WEEK'
-            # schedule_string += '\n\n'
-            # schedule_string += showtime_prettify(sql('SELECT * FROM new_this_week').df(), all_movies, all_theaters, include_schedule=False, include_titles=True)
-
-            # # plain text schedule for movies that have 3 or less screenings at a particular theater in the next week
-            # schedule_string += '\n\n'
-            # schedule_string += 'LIMITED SHOWTIMES'
-            # schedule_string += '\n\n'
-            # schedule_string += showtime_prettify(sql('SELECT * FROM showtimes WHERE CONCAT(movie_id, theater_id) IN (SELECT CONCAT(movie_id, theater_id) FROM limited_showings)').df(), all_movies, theaters, include_titles=True, time_count=False)
-
-            # # plain text schedule for all screenings
-            # schedule_string += '\n\n'
-            # schedule_string += 'FULL SCHEDULE'
-            # schedule_string += '\n\n'
-            # schedule_string += showtime_prettify(showtimes, all_movies, theaters, include_titles=False, time_count=True)
-            
-            # email the plain text schedule to the subscriber
-            # schedule = schedule_simple(showtimes, all_movies, theaters, new_this_week, limited_showings)
+            logger.info('Generating schedule')
+            # generate and email html schedule
             schedule = schedule_simple_html(showtimes, movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
+            logger.info('Emailing schedule')
             send_email(schedule, subscriber_name, subscriber_email, html=True)
 
     except Exception:
-        print(traceback.format_exc())
+        logger.error(traceback.format_exc())
     finally:
         conn.close()
+
+        end_time = datetime.datetime.now()
+        logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
+
