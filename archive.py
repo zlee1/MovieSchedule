@@ -4,6 +4,11 @@ from duckdb import sql
 import datetime
 import traceback
 import platform
+import os
+
+import logging
+
+logger = logging.getLogger('archive')
 
 def initialize_db(db_name):
     """Connect to sqlite3 database
@@ -14,10 +19,14 @@ def initialize_db(db_name):
     Returns:
     [database connection, connection cursor]
     """
+    logger.info('Initializing database connection')
+
     conn = sqlite3.connect(db_name)
     return conn, conn.cursor()
 
 def insert_archive(history, cursor):
+    logger.info('Inserting data into archive')
+
     for index, row in history.iterrows():
         query = f"""
             INSERT INTO archive(movie_id, theater_id, start_date, end_date)
@@ -32,6 +41,8 @@ def insert_archive(history, cursor):
         cursor.execute(query)
 
 def delete_history(history, cursor):
+    logger.info('Deleting original data')
+
     for index, row in history.iterrows():
         query = f"""
             DELETE FROM showtimes 
@@ -44,6 +55,20 @@ def delete_history(history, cursor):
 
 if __name__ == '__main__':
     try:
+
+        start_time = datetime.datetime.now()
+
+        log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.datetime.now().strftime("%d%m%Y")}.log'])
+        if(not os.path.isfile(log_location)):
+            open(log_location, 'w+')
+        else:
+            with open(log_location, 'a') as f:
+                f.write('\n\n\n')
+
+        logging.basicConfig(filename=log_location, level=logging.INFO)
+        logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
+
+
         conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb']))
 
         history = pd.read_sql("""
@@ -58,15 +83,31 @@ if __name__ == '__main__':
                 GROUP BY movie_id, theater_id
                 ORDER BY movie_id, theater_id""", conn)
         
-        print(f"""Archiving {sql("SELECT COUNT(*) AS ct FROM history").df()["ct"].iloc[0]} records from before {pd.read_sql("SELECT DATE('now', '-1 month') AS date", conn)["date"].iloc[0]}.""")
-
-        insert_archive(history, cursor)
-
-        delete_history(history, cursor)
-
-        conn.commit()
+        if(len(history) > 0):
+            logger.info(f"""Archiving {sql("SELECT COUNT(*) AS ct FROM history").df()["ct"].iloc[0]} records from before {pd.read_sql("SELECT DATE('now', '-1 month') AS date", conn)["date"].iloc[0]}""")
             
+            insert_archive(history, cursor)
+
+            delete_history(history, cursor)
+
+            logger.info('Committing changes to database')
+            conn.commit()
+        else:
+            logger.info('No old data to archive')
+
+        for i in os.listdir('logs'):
+            if('movie_schedule' in i and datetime.datetime.strptime(i.split('_')[-1].split('.')[0], '%d%m%Y').date() < datetime.datetime.now().date() - datetime.timedelta(days=6)):
+                logger.info(f'Deleting old log {i}')
+                os.remove(('\\' if platform.system() == 'Windows' else '/').join(['logs', i]))
+
     except Exception:
-        print(traceback.format_exc())
+        logger.error(traceback.format_exc())
     finally:
+
+        logger.info('Closing database connection')
         conn.close()
+
+        end_time = datetime.datetime.now()
+    
+        logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
+
