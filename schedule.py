@@ -257,6 +257,8 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
                         WHERE s.theater_id = \'{theater_row["id"]}\' 
                         ORDER BY m.name""").df()
             
+            # new_theater = sql(f'SELECT MIN(date) < DATE(\'now\', \'-6 days\', \'localtime\') FROM showtime_df WHERE theater_id={theater_row["id"]} GROUP BY theater_id').
+            
             if(len(movies) == 0):
                 continue
             else:
@@ -306,12 +308,19 @@ if __name__ == '__main__':
         # currently does not handle rereleases, but old data is archived monthly so this is not likely to become a problem
         all_new_this_week = pd.read_sql("""
                                         SELECT * FROM showtimes s 
-                                            WHERE NOT EXISTS 
-                                                (SELECT 1 FROM showtimes s2 
-                                                    WHERE 1=1
-                                                        AND s2.movie_id = s.movie_id 
-                                                        AND s2.theater_id = s.theater_id
-                                                        AND CAST(strftime(\'%s\', s2.date) AS integer) <= CAST(strftime(\'%s\', DATE(\'now\', \'-2 days\', \'localtime\')) AS integer))""", conn)
+                                            WHERE 1=1
+                                                AND NOT EXISTS 
+                                                    (SELECT 1 FROM showtimes s2 
+                                                        WHERE 1=1
+                                                            AND s2.movie_id = s.movie_id 
+                                                            AND s2.theater_id = s.theater_id
+                                                            AND CAST(strftime(\'%s\', s2.date) AS integer) <= CAST(strftime(\'%s\', DATE(\'now\', \'-2 days\', \'localtime\')) AS integer))
+                                                AND EXISTS
+                                                    (SELECT 1 FROM showtimes s2
+                                                        WHERE 1=1
+                                                            AND s2.theater_id = s.theater_id
+                                                            AND CAST(strftime(\'%s\', s2.date) AS integer) <= CAST(strftime(\'%s\', DATE(\'now\', \'-6 days\', \'localtime\')) AS integer))
+                                        """, conn)
 
 
         # generate schedule and send email for each subscriber
