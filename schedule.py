@@ -243,8 +243,6 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
 
     if(by in ['both', 'theater']):
         for theater_index, theater_row in theater_df.iterrows():
-            schedule += f"\t<h2>{theater_row['name']}</h2>\n"
-
             movies = sql(f"""
                         SELECT DISTINCT 
                             s.movie_id
@@ -258,9 +256,14 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
                         LEFT JOIN limited_showings l ON l.movie_id = m.id AND l.theater_id = s.theater_id
                         WHERE s.theater_id = \'{theater_row["id"]}\' 
                         ORDER BY m.name""").df()
+            
+            if(len(movies) == 0):
+                continue
+            else:
+                schedule += f"\t<h2>{theater_row['name']}</h2>\n"
 
-            for index, row in movies.iterrows():
-                schedule += f"""\t<p{' style="color:#AA0000"' if row['limited'] else ''}>{'<b>' if row['new'] else ''}{row['name']} [x{row["num_showings"]}]{'</b>' if row['new'] else ''}</p>\n"""
+                for index, row in movies.iterrows():
+                    schedule += f"""\t<p{' style="color:#AA0000"' if row['limited'] else ''}>{'<b>' if row['new'] else ''}{row['name']} [x{row["num_showings"]}]{'</b>' if row['new'] else ''}</p>\n"""
             
     if(by == 'both'):
         schedule += '<br><br><br><h1>Breakdown by Film</h1>'
