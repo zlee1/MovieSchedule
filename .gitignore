@@ -10,3 +10,5 @@ todo.txt
 geckodriver.*
 schedule.html
 *.log
+release_year_updating.py
+run.py

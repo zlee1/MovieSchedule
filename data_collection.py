@@ -241,8 +241,8 @@ def get_movies_from_theater(soup):
 
         movie_year = None
         try:
-            if(re.match(r'\([0-9]{4}\)', get_text(title_sect)[-5:])):
-                movie_year = int(get_text(title_sect)[-5:].replace('(', '').replace(')', ''))
+            if(re.match(r'\([0-9]{4}\)', get_text(title_sect)[-6:])):
+                movie_year = int(get_text(title_sect)[-6:].replace('(', '').replace(')', ''))
         except Exception:
             movie_year = None
             logger.warning(f'year not found for {movie_name}')
