@@ -447,7 +447,7 @@ def insert_showtimes(showtimes, conn, cursor):
     global progress_made
     progress_made = True
 
-def run():
+def collect_data():
     conn = None
     driver = None
 
@@ -536,7 +536,13 @@ def send_failure_email():
 
 
 
-if __name__ == '__main__':
+def run():
+
+    global logger
+    global log_location
+    global driver_location
+    global progress_made
+
     start_time = datetime.now()
 
     with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'file_locations.txt']), 'r') as f:
@@ -566,7 +572,7 @@ if __name__ == '__main__':
     logging.basicConfig(filename=log_location, level=logging.INFO)
     logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
 
-    sleep_value = 30
+    sleep_value = 300
 
     success = 0
     no_progress_ct = 0
@@ -575,7 +581,7 @@ if __name__ == '__main__':
         runs += 1
         logger.info(f'Run - starting attempt {runs}')
         try:
-            success = run()
+            success = collect_data()
         except Exception:
             logger.error(traceback.format_exc())
             success = 0
@@ -601,3 +607,5 @@ if __name__ == '__main__':
     
     logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
 
+if __name__ == "__main__":
+    run()
