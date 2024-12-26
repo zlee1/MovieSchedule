@@ -599,13 +599,15 @@ def run():
                 logger.warning(f'No progress made in run {runs} - number of consecutive runs without progress is now {no_progress_ct}')
             sleep(sleep_value)
     
-    if(not success):
-        logger.info('Did not run successfully - sending failure notification')
-        send_failure_email()
+    # if(not success):
+    #     logger.info('Did not run successfully - sending failure notification')
+    #     send_failure_email()
 
     end_time = datetime.now()
     
     logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
+
+    return success
 
 if __name__ == "__main__":
     run()
