@@ -280,12 +280,14 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
     schedule += '</body>\n</html>'
     return schedule 
 
-if __name__ == '__main__':
+def run():
     try:
+
+        global logger
         start_time = datetime.datetime.now()
         
         # setting up logging
-        log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.now().strftime("%d%m%Y")}.log'])
+        log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.datetime.now().strftime("%d%m%Y")}.log'])
         if(not os.path.isfile(log_location)):
             open(log_location, 'w+')
         else:
@@ -365,3 +367,5 @@ if __name__ == '__main__':
         end_time = datetime.datetime.now()
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
 
+if __name__ == "__main__":
+	run()

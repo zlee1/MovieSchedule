@@ -53,9 +53,9 @@ def delete_history(history, cursor):
 
         cursor.execute(query)
 
-if __name__ == '__main__':
+def run():
     try:
-
+        global logger
         start_time = datetime.datetime.now()
 
         log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.datetime.now().strftime("%d%m%Y")}.log'])
@@ -111,3 +111,5 @@ if __name__ == '__main__':
     
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
 
+if __name__ == "__main__":
+    run()
