@@ -17,8 +17,8 @@ from bs4 import BeautifulSoup
 
 import urllib.request
 from selenium import webdriver
-from selenium.webdriver.firefox.service import Service
-from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 # from subprocess import CREATE_NO_WINDOW
 
 import smtplib
@@ -44,7 +44,7 @@ def browser_init():
 
     options = Options()
 
-    # options.add_argument("--headless=new") # run browser without opening window - commented because it seems to crash raspberry pi
+    #options.add_argument("--headless=new") # run browser without opening window - commented because it seems to crash raspberry pi
     options.add_argument("--log-level=3") # log only errors
     options.add_argument('--blink-settings=imagesEnabled=false') # prevent image loading (?)
 
@@ -52,7 +52,7 @@ def browser_init():
         
     # service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
 
-    driver = webdriver.Firefox(options=options, service=service)
+    driver = webdriver.Chrome(options=options, service=service)
     driver.set_page_load_timeout(300)
     
     logger.info('New browser created')
@@ -366,8 +366,8 @@ def get_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=Fa
                 continue
             soup = get_soup(row['name'], row['url'], date, browser)
             
-            new_movies = get_movies_from_theater(soup)
-            new_showtimes = get_showtimes_from_theater(soup)
+            new_movies += get_movies_from_theater(soup)
+            new_showtimes += get_showtimes_from_theater(soup)
         
         logger.info(f'Inserting movies and showtimes for {row["name"]}')
         if(new_movies != []):
@@ -390,6 +390,7 @@ def theater_date_update(theater_id, conn, cursor):
     progress_made = True
 
 def insert_movies(movies, conn, cursor):
+    logger.info(f'Inserting {len(movies)} movies')
     for movie in movies:
         query = f"""
         INSERT INTO movies(id, name, url, release_year, runtime, rating, image_url)
@@ -418,6 +419,7 @@ def insert_movies(movies, conn, cursor):
     progress_made = True
 
 def insert_showtimes(showtimes, conn, cursor):
+    logger.info(f'Inserting {len(showtimes)} showtimes')
     for showtime in showtimes:
         query = f"""
         INSERT INTO showtimes(id, movie_id, theater_id, url, date, time, format)

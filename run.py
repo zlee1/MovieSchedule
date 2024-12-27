@@ -14,7 +14,7 @@ logger = logging.getLogger('run')
 
 log_location = None
 
-def send_failure_email(step, exception_traceback):
+def send_failure_email(step, exception_traceback=None):
     logger.info('Sending failure email')
 
     # read email credentials
@@ -34,7 +34,10 @@ def send_failure_email(step, exception_traceback):
     with open(log_location, 'r') as f:
         log = f.read()
 
-    msg.set_content(f'Exception traceback:\n{str(exception_traceback)}\n\n\nPlease check logs for more information.')
+    if(exception_traceback is not None):
+        msg.set_content(f'Exception traceback:\n{str(exception_traceback)}\n\n\nPlease check logs for more information.')
+    else:
+        msg.set_content('Please check logs for more information.')
 
     # initialize smtp connection
     server = smtplib.SMTP(host, 587)
@@ -68,18 +71,22 @@ def run():
 
         logger.info('Starting data collection')
         step = 'data_collection'
-        data_collection.run()
+        success = data_collection.run()
         logger.info('Data collection done')
 
-        logger.info('Starting schedule')
-        step = 'schedule'
-        schedule.run()
-        logger.info('Schedule done')
+        if(success):
+            logger.info('Starting schedule')
+            step = 'schedule'
+            schedule.run()
+            logger.info('Schedule done')
 
-        logger.info('Starting archive')
-        step = 'archive'
-        archive.run()
-        logger.info('Archive done')
+            logger.info('Starting archive')
+            step = 'archive'
+            archive.run()
+            logger.info('Archive done')
+        else:
+            logger.error('Data collection did not finish successfully - schedule and archive not running')
+
     except Exception:
         logger.error(traceback.format_exc())
         send_failure_email(step, traceback.format_exc())
@@ -87,7 +94,6 @@ def run():
         end_time = datetime.now()
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
     
-
 
 if __name__ == "__main__":
     run()
