@@ -9,6 +9,7 @@ from datetime import datetime
 import os
 import smtplib
 from email.message import EmailMessage
+from time import sleep
 
 logger = logging.getLogger('run')
 
@@ -68,11 +69,19 @@ def run():
         logging.basicConfig(filename=log_location, level=logging.INFO)
         logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
 
+        wait_time = 600
 
-        logger.info('Starting data collection')
-        step = 'data_collection'
-        success = data_collection.run()
-        logger.info('Data collection done')
+        for i in range(5):
+            logger.info('Starting data collection')
+            step = 'data_collection'
+            success = data_collection.run()
+            logger.info('Data collection done')
+
+            if(not success):
+                logger.error(f'Data collection attempt {i} failed. Trying again in {wait_time} seconds')
+                sleep(wait_time)
+            else:
+                break
 
         if(success):
             logger.info('Starting schedule')
