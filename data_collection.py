@@ -11,7 +11,7 @@ import logging
 import os
 
 import warnings
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore") # warnings are annoying!
 
 from bs4 import BeautifulSoup
 
@@ -23,10 +23,10 @@ from selenium.webdriver.chrome.options import Options
 
 logger = logging.getLogger('data_collection')
 
-log_location = None
-driver_location = None
+log_location = None # filepath for log
+driver_location = None # filepath for driver
 
-progress_made = False
+progress_made = False # bool to keep track of whether any progess was made in a run
 
 
 def browser_init():
@@ -77,6 +77,7 @@ def get_zip_codes(conn):
     list - [str zip code, str zip code, str zip code]
     """
 
+    # zip codes to check are those with active subscriptions
     return list(pd.read_sql('SELECT DISTINCT zip_code FROM subscriptions WHERE active=1;', conn)['zip_code'])
 
 def get_soup(theater, url, date, browser):
@@ -119,12 +120,41 @@ def get_soup(theater, url, date, browser):
     return soup
 
 def get_text(soup):
+    """Get text from a BeautifulSoup element
+
+    Keyword arguments:
+    soup - BeautifulSoup element
+
+    Returns:
+    str - cleaned text of element
+    """
+
     return soup.text.replace('\n', '').replace('\t', '').replace('\'', '\'\'').strip()
 
 def select_all_from_table(tablename, conn):
+    """Select all data from a given table in database
+
+    Keyword arguments:
+    tablename - name of table in database to query
+    conn - database connection
+
+    Returns:
+    pd.DataFrame - all data from table
+    """
+
     return pd.read_sql_query(f'SELECT * FROM {tablename}', conn)
 
 def insert_zip_code(zip_code, theater_id, cursor):
+    """Insert zip code data into database
+    
+    Keyword arguments:
+    zip_code - zip code as string
+    theater_id - id of theater as string
+    cursor - cursor for database
+    
+    Returns:
+    None
+    """
     
     query = f"""
         INSERT OR IGNORE INTO zip_codes(zip_code, theater_id)
