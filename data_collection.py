@@ -21,11 +21,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 # from subprocess import CREATE_NO_WINDOW
 
-import smtplib
-from email.mime.text import MIMEText
-from email.message import EmailMessage
-
-
 logger = logging.getLogger('data_collection')
 
 log_location = None
@@ -46,7 +41,7 @@ def browser_init():
 
     #options.add_argument("--headless=new") # run browser without opening window - commented because it seems to crash raspberry pi
     options.add_argument("--log-level=3") # log only errors
-    options.add_argument('--blink-settings=imagesEnabled=false') # prevent image loading (?)
+    options.add_argument('--blink-settings=imagesEnabled=false') # prevent image loading
 
     service = Service(executable_path=driver_location)
         
@@ -82,45 +77,39 @@ def get_zip_codes(conn):
     list - [str zip code, str zip code, str zip code]
     """
 
-    # if(filename is None):
-    #     filename = ('\\' if platform.system() == 'Windows' else '/').join(['data', 'data.txt'])
-
-    # if(not from_file):
-    #     zip_codes = []
-    #     zip_code = None
-    #     while zip_code != '':
-    #         zip_code = str(input('Enter a zip code (empty for done): ')).strip()
-    #         if(zip_code != ''):
-    #             zip_codes.append(zip_code)
-    #     logger.info(f'zip codes: {zip_codes}')
-    #     return zip_codes
-    # else:
-    #     with open(filename, 'r') as f:
-    #         for i in f.readlines():
-    #             if(i[:3] == 'zip'):
-    #                 zip_codes = re.sub('zip=', '', i).replace('\n', '').split(',')
-    #                 logger.info(f'zip codes: {zip_codes}')
-    #                 return zip_codes
-
-    # logger.info(list(pd.read_sql('SELECT DISTINCT zip_code FROM subscriptions', conn)['zip_code']))
-
     return list(pd.read_sql('SELECT DISTINCT zip_code FROM subscriptions WHERE active=1;', conn)['zip_code'])
 
 def get_soup(theater, url, date, browser):
+    """Get BeautifulSoup object of a page
+
+    Keyword Arguments:
+    theater - name of theater
+    url - base url of theater (https://www.fandango.com/shu-community-theatre-aabqu/theater-page)
+    date - date of showings to collect
+    browser - selenium browser
+
+    Returns:
+    BeautifulSoup object
+    """
+
+    # date must be in YYYY-mm-dd format for url
     formatted_date = date.strftime('%Y-%m-%d')
 
+    # full url incorporates date restriction
     full_url = f'{url}?cmp=theater-module&format=all&date={formatted_date}'
     
     logger.info(f'current theater: {theater} | current date: {date} | address: {full_url}')
     
+    # try to get html until page loads properly - max 10 attempts
     for i in range(10):
 
         browser.get(full_url)
 
-        sleep(random.randint(5, 10))
+        sleep(random.randint(5, 10)) # wait time incorporated so my ip doesn't get banned again
 
         soup = BeautifulSoup(browser.page_source, 'html.parser')
 
+        # if offline__header exists, page hasn't loaded properly
         container = soup.find('h1', 'offline__header')
         if(container is None):
             break;
@@ -147,7 +136,7 @@ def insert_zip_code(zip_code, theater_id, cursor):
     
     cursor.execute(query)
 
-def get_theaters(zip_codes, conn, cursor):
+def collect_theaters(zip_codes, conn, cursor):
     """Get list of all theaters that appear in search for each provided zip code.
 
     Keyword arguments:
@@ -208,7 +197,7 @@ def insert_theaters(theaters, conn, cursor):
     global progress_made
     progress_made = True
 
-def get_movies_from_theater(soup):
+def collect_movies_from_theater(soup):
     movies = []
     
     container = soup.find('ul', 'thtr-mv-list')
@@ -286,7 +275,7 @@ def get_movies_from_theater(soup):
         
     return movies
 
-def get_showtimes_from_theater(soup):
+def collect_showtimes_from_theater(soup):
     showtimes = []
 
     container = soup.find('ul', 'thtr-mv-list')
@@ -344,7 +333,7 @@ def get_showtimes_from_theater(soup):
 
     return showtimes
 
-def get_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=False):
+def collect_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=False):
     # skip theaters that have showtime data one week away - these have already gone through the data collection process
     # smaller theaters that do not have screenings one week away but do have screenings within the following week will be rechecked in this scenario, but this is uncommon and shouldn't be an issue
     if(not redo):
@@ -366,8 +355,8 @@ def get_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=Fa
                 continue
             soup = get_soup(row['name'], row['url'], date, browser)
             
-            new_movies += get_movies_from_theater(soup)
-            new_showtimes += get_showtimes_from_theater(soup)
+            new_movies += collect_movies_from_theater(soup)
+            new_showtimes += collect_showtimes_from_theater(soup)
         
         logger.info(f'Inserting movies and showtimes for {row["name"]}')
         if(new_movies != []):
@@ -463,28 +452,13 @@ def collect_data():
         zip_codes = get_zip_codes(conn)
         
         logger.info('Collecting theaters')
-        theaters = get_theaters(zip_codes, conn, cursor)
+        collect_theaters(zip_codes, conn, cursor)
 
-        # logger.info('Inserting theater data to db')
-        # insert_theaters(theaters, conn, cursor)
         zip_code_str = ','.join([f"\'{i}\'" for i in zip_codes])
         theater_df = pd.read_sql(f'SELECT * FROM theaters t INNER JOIN zip_codes z ON z.theater_id = t.id WHERE z.zip_code IN ({zip_code_str})', conn)
 
         logger.info('Collecting movies and showtimes')
-        get_all_movies_and_showtimes(theater_df, [datetime.now().date() + timedelta(days=i) for i in range(7)], driver, conn, cursor, redo=False)
-
-        # logger.info('Inserting movie data to db')
-        # insert_movies(movies, cursor)
-
-        # logger.info('Inserting showtime data to db')
-        # insert_showtimes(showtimes, cursor)
-
-        # movie_df = select_all_from_table('movies', conn)
-
-        # showtime_df = select_all_from_table('showtimes', conn)
-
-        # logger.info('Committing db changes')
-        # conn.commit()
+        collect_all_movies_and_showtimes(theater_df, [datetime.now().date() + timedelta(days=i) for i in range(7)], driver, conn, cursor, redo=False)
 
     except Exception:
         logging.error(traceback.format_exc())
@@ -492,51 +466,18 @@ def collect_data():
     else:
         success = 1
     finally:
-        try: conn.close() 
-        except: pass
-        try: driver.close()
-        except: pass
+        try: 
+            conn.close() 
+        except: 
+            logger.error('Attempted to close non-existent database connection')
+
+        try: 
+            driver.close()
+        except: 
+            logger.error('Attempted to close non-existent webdriver')
 
         logger.info('Closed db connection and webdriver')
         return success
-
-
-def send_failure_email():
-    # read email credentials
-    with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'email_credentials.txt']), 'r') as f:
-        host = f.readline().replace('\n', '')
-        email = f.readline().replace('\n', '')
-        password = f.readline().replace('\n', '')
-        error_email = f.readline().replace('\n', '')
-
-    msg = EmailMessage()
-
-    msg['From'] = email
-    msg['To'] = error_email
-    msg['Subject'] = f'Movie Theater Data Collection Failed at {datetime.now().strftime("%m/%d/%Y %H:%M:%S")}' 
-
-
-    with open(log_location, 'r') as f:
-        log = f.read()
-
-    msg.set_content('Please check logs for more information.')
-
-    #msg.attach(MIMEText(log))
-
-    # initialize smtp connection
-    server = smtplib.SMTP(host, 587)
-    server.ehlo()
-    server.starttls()
-    server.ehlo()
-    server.login(email, password)
-
-    server.send_message(msg)
-
-    server.quit()
-
-    logger.info('Failure notification sent')
-
-
 
 def run():
 
@@ -562,11 +503,6 @@ def run():
     else:
         with open(log_location, 'a') as f:
             f.write('\n\n\n')
-
-    # if(log_location is None):
-    #     warnings.warn('No log provided, creating new log')
-    #     with open('movie_schedule.log', 'w+') as f:
-    #         f.write('LOG NOT PROVIDED, NEW LOG CREATED')
 
     if(driver_location is None):
         raise Exception('WebDriver not provided. Please add WebDriver filepath to data/file_locations.txt on a new line in the format of "driver=<filepath>"')
@@ -600,10 +536,6 @@ def run():
                 no_progress_ct += 1
                 logger.warning(f'No progress made in run {runs} - number of consecutive runs without progress is now {no_progress_ct}')
             sleep(sleep_value)
-    
-    # if(not success):
-    #     logger.info('Did not run successfully - sending failure notification')
-    #     send_failure_email()
 
     end_time = datetime.now()
     
