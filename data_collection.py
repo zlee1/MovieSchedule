@@ -155,7 +155,7 @@ def insert_zip_code(zip_code, theater_id, cursor):
     Returns:
     None
     """
-    
+
     query = f"""
         INSERT OR IGNORE INTO zip_codes(zip_code, theater_id)
         VALUES(
@@ -187,20 +187,23 @@ def collect_theaters(zip_codes, conn, cursor):
 
         zip_search.close()
 
-        theaters = zip_search_page.find(id='nearby-theaters-select-list').find_all('option')
+        theaters = zip_search_page.find(id='nearby-theaters-select-list').find_all('option') # list of all theaters on page
 
         for theater in theaters[1:]:
             theater_dict = {}
-            theater_dict['id'] = theater["value"].replace('/', '').replace('theater-page', '')[-5:]
+            theater_dict['id'] = theater["value"].replace('/', '').replace('theater-page', '')[-5:] # end of url is theater id
             theater_dict['name'] = theater.text.strip()
             theater_dict['url'] = f'https://www.fandango.com{theater["value"]}'
-            theater_dict['address'] = None
+            theater_dict['address'] = None # to be added later? probably not, doesn't seem especially useful and would require visiting each theater page
+
             if(theater_dict not in theater_list):
                 theater_list.append(theater_dict)
 
+            # insert data into zip code table
             logger.info(f'Adding {theater_dict["name"]} for zip code {zip_code}')
             insert_zip_code(zip_code, theater_dict['id'], cursor)
     
+    # insert data into theater table
     logger.info('Inserting theater data')
     insert_theaters(theater_list, conn, cursor)
 
