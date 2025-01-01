@@ -208,6 +208,7 @@ def collect_theaters(zip_codes, conn, cursor):
     insert_theaters(theater_list, conn, cursor)
 
 def insert_theaters(theaters, conn, cursor):
+    # loop through all theaters
     for theater in theaters:
         query = f"""
         INSERT INTO theaters(id, name, url, address)
