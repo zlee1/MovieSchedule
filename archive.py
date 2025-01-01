@@ -58,7 +58,7 @@ def run():
         global logger
         start_time = datetime.datetime.now()
 
-        log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.datetime.now().strftime("%d%m%Y")}.log'])
+        log_location = os.path.join('logs', f'movie_schedule_{datetime.datetime.now().strftime("%d%m%Y")}.log')
         if(not os.path.isfile(log_location)):
             open(log_location, 'w+')
         else:
@@ -69,7 +69,7 @@ def run():
         logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
 
 
-        conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb']))
+        conn, cursor = initialize_db(os.path.join('sqlite3', 'moviedb'))
 
         history = pd.read_sql("""
             SELECT movie_id, theater_id, MIN(date) AS start_date, MAX(date) AS end_date FROM showtimes s
@@ -98,7 +98,7 @@ def run():
         for i in os.listdir('logs'):
             if('movie_schedule' in i and datetime.datetime.strptime(i.split('_')[-1].split('.')[0], '%d%m%Y').date() < datetime.datetime.now().date() - datetime.timedelta(days=6)):
                 logger.info(f'Deleting old log {i}')
-                os.remove(('\\' if platform.system() == 'Windows' else '/').join(['logs', i]))
+                os.remove(os.path.join('logs', i))
 
     except Exception:
         logger.error(traceback.format_exc())

@@ -10,6 +10,7 @@ import os
 import smtplib
 from email.message import EmailMessage
 from time import sleep
+import sys
 
 logger = logging.getLogger('run')
 
@@ -19,7 +20,7 @@ def send_failure_email(step, exception_traceback=None):
     logger.info('Sending failure email')
 
     # read email credentials
-    with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'email_credentials.txt']), 'r') as f:
+    with open(os.path.join('data', 'email_credentials.txt'), 'r') as f:
         host = f.readline().replace('\n', '')
         email = f.readline().replace('\n', '')
         password = f.readline().replace('\n', '')
@@ -56,9 +57,12 @@ def send_failure_email(step, exception_traceback=None):
 
 def run():
     try:
+        if('test' in sys.argv):
+            logger.warning('Running in test mode - all schedule emails will go to test email')
+
         start_time = datetime.now()
 
-        log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.now().strftime("%d%m%Y")}.log'])
+        log_location = os.path.join('logs', f'movie_schedule_{datetime.now().strftime("%d%m%Y")}.log')
     
         if(not os.path.isfile(log_location)):
             open(log_location, 'w+')
@@ -86,7 +90,7 @@ def run():
         if(success):
             logger.info('Starting schedule')
             step = 'schedule'
-            schedule.run()
+            schedule.run(test = 'test' in sys.argv)
             logger.info('Schedule done')
 
             logger.info('Starting archive')

@@ -6,7 +6,6 @@ import re
 import traceback
 import pandas as pd
 import sqlite3
-import platform
 import logging
 import os
 
@@ -481,7 +480,7 @@ def collect_data():
         driver = browser_init()
 
         logger.info('Connecting to database')
-        conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb']))
+        conn, cursor = initialize_db(os.path.join('sqlite3', 'moviedb'))
 
         zip_codes = get_zip_codes(conn)
         
@@ -522,7 +521,7 @@ def run():
 
     start_time = datetime.now()
 
-    with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'file_locations.txt']), 'r') as f:
+    with open(os.path.join('data', 'file_locations.txt'), 'r') as f:
         file_locations = f.read().splitlines()
 
     for i in file_locations:
@@ -531,7 +530,7 @@ def run():
         elif(i.startswith('driver=')):
             driver_location = i.split('driver=')[1]
 
-    log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.now().strftime("%d%m%Y")}.log'])
+    log_location = os.path.join('logs', f'movie_schedule_{datetime.now().strftime("%d%m%Y")}.log')
     if(not os.path.isfile(log_location)):
         open(log_location, 'w+')
     else:

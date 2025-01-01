@@ -47,7 +47,7 @@ def send_email(content, subscriber, to, html=False, dates=None):
         dates.append((datetime.datetime.today() + datetime.timedelta(days=6)).strftime('%m/%d/%y'))
     
     # read email credentials
-    with open(('\\' if platform.system() == 'Windows' else '/').join(['data', 'email_credentials.txt']), 'r') as f:
+    with open(os.path.join('data', 'email_credentials.txt'), 'r') as f:
         host = f.readline().replace('\n', '')
         email = f.readline().replace('\n', '')
         password = f.readline().replace('\n', '')
@@ -280,14 +280,14 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
     schedule += '</body>\n</html>'
     return schedule 
 
-def run():
+def run(test=False):
     try:
 
         global logger
         start_time = datetime.datetime.now()
         
         # setting up logging
-        log_location = ('\\' if platform.system() == 'Windows' else '/').join(['logs', f'movie_schedule_{datetime.datetime.now().strftime("%d%m%Y")}.log'])
+        log_location = os.path.join('logs', f'movie_schedule_{datetime.datetime.now().strftime("%d%m%Y")}.log')
         if(not os.path.isfile(log_location)):
             open(log_location, 'w+')
         else:
@@ -299,7 +299,7 @@ def run():
 
         logger.info('Initializing database connection')
         # connect to database
-        conn, cursor = initialize_db(('\\' if platform.system() == 'Windows' else '/').join(['sqlite3', 'moviedb'])) 
+        conn, cursor = initialize_db(os.path.join('sqlite3', 'moviedb')) 
 
         logger.info('Initializing dataframes')
         # initialize dataframes
@@ -330,6 +330,17 @@ def run():
 
 
         logger.info('Starting schedule process')
+
+        # read email credentials
+        with open(os.path.join('data', 'email_credentials.txt'), 'r') as f:
+            host = f.readline().replace('\n', '')
+            email = f.readline().replace('\n', '')
+            password = f.readline().replace('\n', '')
+            test_email = f.readline().replace('\n', '') # when run in test mode, send all emails to test email instead of real users
+
+        if(test):
+            logger.warning(f'Running in test mode - all schedule emails will go to {test_email}')
+
         # generate schedule and send email for each subscriber
         for index, row in subscriptions.iterrows():
 
@@ -352,12 +363,12 @@ def run():
             new_this_week = sql(f'SELECT * FROM all_new_this_week WHERE theater_id IN {theater_ids}').df()
             # only movies with 3 or less screenings at a particular theater in the next week. if something is showing 5 times at one theater, but 2 at another, it will be included here only for the theater with 2 screenings
             limited_showings = sql('SELECT movie_id, theater_id, COUNT(*) AS count FROM showtimes GROUP BY movie_id, theater_id HAVING COUNT(*) <= 3 ORDER BY theater_id, movie_id').df()
-            
+
             logger.info('Generating schedule')
             # generate and email html schedule
             schedule = schedule_simple_html(showtimes, movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
             logger.info('Emailing schedule')
-            send_email(schedule, subscriber_name, subscriber_email, html=True)
+            send_email(schedule, subscriber_name, subscriber_email if not test else test_email, html=True) # if test mode active send all emails to test emails
 
     except Exception:
         logger.error(traceback.format_exc())
