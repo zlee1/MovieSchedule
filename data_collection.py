@@ -23,7 +23,7 @@ from selenium.webdriver.chrome.options import Options
 logger = logging.getLogger('data_collection')
 
 log_location = None # filepath for log
-driver_location = None # filepath for driver
+driver_location = None # filepath for chrome driver
 
 progress_made = False # bool to keep track of whether any progess was made in a run
 
@@ -39,14 +39,18 @@ def browser_init():
     options = Options()
 
     #options.add_argument("--headless=new") # run browser without opening window - commented because it seems to crash raspberry pi
-    options.add_argument("--log-level=3") # log only errors
+
+    options.add_argument("--no-sandbox") #bypass OS security model
+    options.add_argument("--disable-dev-shm-usage") #overcome limited resource problems
+
+    # options.add_argument("--log-level=3") # log only errors
     options.add_argument('--blink-settings=imagesEnabled=false') # prevent image loading
 
     service = Service(executable_path=driver_location)
         
     # service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
 
-    driver = webdriver.Chrome(options=options, service=service)
+    driver = webdriver.Chrome(service=service, options=options)
     driver.set_page_load_timeout(300)
     
     logger.info('New browser created')
