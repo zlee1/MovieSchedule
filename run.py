@@ -36,7 +36,7 @@ def send_failure_email(step, exception_traceback=None):
     with open(log_location, 'r') as f:
         log = f.read()
 
-    if(exception_traceback is not None):
+    if(exception_traceback):
         msg.set_content(f'Exception traceback:\n{str(exception_traceback)}\n\n\nPlease check logs for more information.')
     else:
         msg.set_content('Please check logs for more information.')
@@ -99,6 +99,7 @@ def run():
             logger.info('Archive done')
         else:
             logger.error('Data collection did not finish successfully - schedule and archive not running')
+            send_failure_email(step)
 
     except Exception:
         logger.error(traceback.format_exc())

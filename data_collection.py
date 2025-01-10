@@ -8,6 +8,8 @@ import pandas as pd
 import sqlite3
 import logging
 import os
+import subprocess
+import threading
 
 import warnings
 warnings.filterwarnings("ignore") # warnings are annoying!
@@ -513,10 +515,15 @@ def collect_data():
         except: 
             logger.error('Attempted to close non-existent webdriver')
 
+        try:
+            subprocess.call(['pkill', 'protonvpn'])
+        except:
+            logger.error('Attempted to end non-existent vpn session')
+
         logger.info('Closed db connection and webdriver')
         return success
 
-def run():
+def run(vpn=True):
 
     global logger
     global log_location
@@ -547,6 +554,14 @@ def run():
     logging.basicConfig(filename=log_location, level=logging.INFO)
     logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
 
+    if(vpn):
+        logger.info(f'Starting VPN')
+        vpn_thread = threading.Thread(target=subprocess.call, args=['protonvpn-app'])
+        vpn_thread.start()
+
+        sleep(30)
+
+
     sleep_value = 300
 
     success = 0
@@ -575,6 +590,11 @@ def run():
             sleep(sleep_value)
 
     end_time = datetime.now()
+
+    if(vpn):
+        logger.info('Ending vpn session')
+
+        subprocess.call(['pkill', 'protonvpn'])
     
     logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
 
