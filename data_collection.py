@@ -10,6 +10,7 @@ import logging
 import os
 import subprocess
 import threading
+from duckdb import sql
 
 import warnings
 warnings.filterwarnings("ignore") # warnings are annoying!
@@ -26,6 +27,7 @@ logger = logging.getLogger('data_collection')
 
 log_location = None # filepath for log
 driver_location = None # filepath for chrome driver
+app_db = None # filepath for webapp database - needed for subscription data
 
 progress_made = False # bool to keep track of whether any progess was made in a run
 
@@ -149,6 +151,27 @@ def select_all_from_table(tablename, conn):
 
     return pd.read_sql_query(f'SELECT * FROM {tablename}', conn)
 
+def get_subscriptions():
+    """Get subscription and theater data from django app database
+    """
+
+    logger.info('Connecting to django app database')
+    conn, cursor = initialize_db(app_db)
+
+    logger.info('Collecting subscription data')
+    active_users = pd.read_sql('SELECT id, username, first_name, last_name, email FROM auth_user WHERE is_active=1', conn)
+    all_theaters = pd.read_sql('SELECT id, name, url FROM subscriptions_theater WHERE id IN (SELECT DISTINCT theater_id FROM subscriptions_subscription)', conn)
+    all_subscriptions = pd.read_sql('SELECT user_id, theater_id FROM subscriptions_subscription', conn)
+
+    # take only active data
+    subscriptions = sql('SELECT s.user_id, s.theater_id FROM all_subscriptions s INNER JOIN active_users u ON u.id = s.user_id').df()
+    theaters = sql('SELECT t.id, t.name, t.url FROM all_theaters t INNER JOIN subscriptions s ON s.theater_id = t.id').df()
+    
+    logger.info('Subscription data colelcted - closing database connection')
+    conn.close()
+
+    return subscriptions, theaters
+
 def insert_zip_code(zip_code, theater_id, cursor):
     """Insert zip code data into database
     
@@ -214,13 +237,13 @@ def collect_theaters(zip_codes, conn, cursor):
 
 def insert_theaters(theaters, conn, cursor):
     # loop through all theaters
-    for theater in theaters:
+    for index, row in theaters.iterrows():
         query = f"""
         INSERT INTO theaters(id, name, url, address)
         VALUES(
-            \'{theater.get('id')}\'
-            ,\'{theater.get('name').replace('\'', '\'\'')}\'
-            ,\'{theater.get('url') if theater.get('url') != None else ''}\'
+            \'{row['id']}\'
+            ,\'{row['name'].replace('\'', '\'\'')}\'
+            ,\'{row['url'] if row['url'] != None else ''}\'
             ,\'\'
         )
         ON CONFLICT(id) DO UPDATE SET
@@ -488,13 +511,19 @@ def collect_data():
         logger.info('Connecting to database')
         conn, cursor = initialize_db(os.path.join('sqlite3', 'moviedb'))
 
-        zip_codes = get_zip_codes(conn)
+        # zip_codes = get_zip_codes(conn)
         
-        logger.info('Collecting theaters')
-        collect_theaters(zip_codes, conn, cursor)
+        # logger.info('Collecting theaters')
+        # collect_theaters(zip_codes, conn, cursor)
 
-        zip_code_str = ','.join([f"\'{i}\'" for i in zip_codes])
-        theater_df = pd.read_sql(f'SELECT * FROM theaters t INNER JOIN zip_codes z ON z.theater_id = t.id WHERE z.zip_code IN ({zip_code_str})', conn)
+        # zip_code_str = ','.join([f"\'{i}\'" for i in zip_codes])
+
+        app_subscriber_df, app_theater_df = get_subscriptions()
+        insert_theaters(app_theater_df, conn, cursor)
+
+        theater_ids = list(sql('SELECT DISTINCT id FROM app_theater_df').df()['id'])
+
+        theater_df = pd.read_sql(f"SELECT * FROM theaters WHERE id IN ({','.join(['\''+id+'\'' for id in theater_ids])})", conn)
 
         logger.info('Collecting movies and showtimes')
         collect_all_movies_and_showtimes(theater_df, [datetime.now().date() + timedelta(days=i) for i in range(7)], driver, conn, cursor, redo=False)
@@ -528,6 +557,7 @@ def run(vpn=True):
     global logger
     global log_location
     global driver_location
+    global app_db
     global progress_made
 
     start_time = datetime.now()
@@ -540,6 +570,8 @@ def run(vpn=True):
             log_location = i.split('log=')[1]
         elif(i.startswith('driver=')):
             driver_location = i.split('driver=')[1]
+        elif(i.startswith('app_db=')):
+            app_db = i.split('app_db=')[1]
 
     log_location = os.path.join('logs', f'movie_schedule_{datetime.now().strftime("%d%m%Y")}.log')
     if(not os.path.isfile(log_location)):
