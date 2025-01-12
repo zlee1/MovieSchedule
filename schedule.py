@@ -14,6 +14,7 @@ from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger('schedule')
 
+
 def initialize_db(db_name):
     """Connect to sqlite3 database
 
@@ -285,6 +286,13 @@ def run(test=False):
 
         global logger
         start_time = datetime.datetime.now()
+
+        with open(os.path.join('data', 'file_locations.txt'), 'r') as f:
+            file_locations = f.read().splitlines()
+
+        for i in file_locations:
+            if(i.startswith('app_db=')):
+                app_db = i.split('app_db=')[1]
         
         # setting up logging
         log_location = os.path.join('logs', f'movie_schedule_{datetime.datetime.now().strftime("%d%m%Y")}.log')
@@ -297,15 +305,16 @@ def run(test=False):
         logging.basicConfig(filename=log_location, level=logging.INFO)
         logger.info(f'Starting {start_time.strftime("%m/%d/%Y %H:%M:%S")}')
 
-        logger.info('Initializing database connection')
+        logger.info('Initializing database connections')
         # connect to database
         conn, cursor = initialize_db(os.path.join('sqlite3', 'moviedb')) 
+        app_conn, app_cursor = initialize_db(app_db)
 
         logger.info('Initializing dataframes')
         # initialize dataframes
-        subscribers = pd.read_sql('SELECT * FROM subscribers', conn)
-        subscriptions = pd.read_sql('SELECT * FROM subscriptions WHERE active = 1', conn)
-        zip_codes = pd.read_sql('SELECT * FROM zip_codes', conn)
+        subscribers = pd.read_sql('SELECT u.id, username, first_name, last_name, email FROM auth_user u INNER JOIN (SELECT DISTINCT user_id FROM subscriptions_subscription) s ON s.user_id = u.id WHERE is_active=1', app_conn)
+        subscriptions = pd.read_sql('SELECT user_id, theater_id FROM subscriptions_subscription s INNER JOIN auth_user u ON u.id = s.user_id WHERE u.is_active = 1', app_conn)
+        # zip_codes = pd.read_sql('SELECT * FROM zip_codes', conn)
         all_theaters = pd.read_sql('SELECT * FROM theaters', conn)
         all_movies = pd.read_sql('SELECT * FROM movies', conn)
         # only include showtimes that occur within next week
@@ -342,19 +351,19 @@ def run(test=False):
             logger.warning(f'Running in test mode - all schedule emails will go to {test_email}')
 
         # generate schedule and send email for each subscriber
-        for index, row in subscriptions.iterrows():
+        for index, row in subscribers.iterrows():
 
-            subscriber_id = row['subscriber_id']
+            subscriber_id = row['id']
 
-            subscriber = sql(f'SELECT name, email FROM subscribers WHERE id = {subscriber_id};').df()
-            subscriber_name = subscriber['name'][0]
-            subscriber_email = subscriber['email'][0]
+            first_name = row['first_name']
+            subscriber_name = first_name if first_name is not None and first_name != '' else row['username']
+            subscriber_email = row['email']
 
             logger.info(f'Schedule for {subscriber_name}')
 
             logger.info('Gathering subscription-specific data')
             # ids of theaters that the subscriber subscribes to
-            theater_ids = list(sql(f'SELECT DISTINCT z.theater_id FROM subscribers s INNER JOIN subscriptions sub ON s.id = sub.subscriber_id INNER JOIN zip_codes z ON z.zip_code = sub.zip_code WHERE sub.subscriber_id = {subscriber_id} ORDER BY z.zip_code').df()['theater_id'])
+            theater_ids = list(sql(f'SELECT DISTINCT theater_id FROM subscriptions WHERE user_id = {subscriber_id}').df()['theater_id'])
 
             # # data only includes theaters that the subscriber subscribes to
             theaters = sql(f'SELECT * FROM all_theaters WHERE id IN {theater_ids} ORDER BY name').df()
@@ -374,6 +383,7 @@ def run(test=False):
         logger.error(traceback.format_exc())
     finally:
         conn.close()
+        app_conn.close()
 
         end_time = datetime.datetime.now()
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
