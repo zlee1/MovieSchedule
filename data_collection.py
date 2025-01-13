@@ -11,6 +11,7 @@ import os
 import subprocess
 import threading
 from duckdb import sql
+import requests
 
 import warnings
 warnings.filterwarnings("ignore") # warnings are annoying!
@@ -171,6 +172,29 @@ def get_subscriptions():
     conn.close()
 
     return subscriptions, theaters
+
+def get_subscriptions_api():
+    """Get subscription and theater data from django app api
+    """
+
+    logger.info('Collecting subscription data from API')
+    all_subscriptions = pd.DataFrame(requests.get(os.environ['WEBAPP_BASEURL'] + 'api/subscriptions/', headers={'Authorization': f'Token {os.environ["API_KEY"]}'}).json())
+    
+    logger.info('Collecting theater data from API')
+    all_theaters = pd.DataFrame(requests.get(os.environ['WEBAPP_BASEURL'] + 'api/theaters/', headers={'Authorization': f'Token {os.environ["API_KEY"]}'}).json())
+
+    logger.info('Collecting user data from API')
+    all_users = pd.DataFrame(requests.get(os.environ['WEBAPP_BASEURL'] + 'api/users/', headers={'Authorization': f'Token {os.environ["API_KEY"]}'}).json())
+
+    logger.info('Restricting data to active only')
+
+    active_users = sql('SELECT * FROM all_users WHERE is_active=1').df()
+    active_subscriptions = sql('SELECT * FROM all_subscriptions WHERE user_id IN (SELECT DISTINCT id FROM active_users)').df()
+    active_theaters = sql('SELECT * FROM all_theaters WHERE id IN (SELECT DISTINCT theater_id FROM active_subscriptions)').df()
+
+    logger.info('API data collected')
+    return active_subscriptions, active_theaters
+
 
 def insert_zip_code(zip_code, theater_id, cursor):
     """Insert zip code data into database
@@ -518,7 +542,7 @@ def collect_data():
 
         # zip_code_str = ','.join([f"\'{i}\'" for i in zip_codes])
 
-        app_subscriber_df, app_theater_df = get_subscriptions()
+        app_subscriber_df, app_theater_df = get_subscriptions_api()
         insert_theaters(app_theater_df, conn, cursor)
 
         theater_ids = list(sql('SELECT DISTINCT id FROM app_theater_df').df()['id'])
