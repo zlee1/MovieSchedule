@@ -6,6 +6,7 @@ import traceback
 import platform
 import logging
 import os
+import requests
 
 import smtplib
 from email.mime.text import MIMEText
@@ -308,12 +309,15 @@ def run(test=False):
         logger.info('Initializing database connections')
         # connect to database
         conn, cursor = initialize_db(os.path.join('sqlite3', 'moviedb')) 
-        app_conn, app_cursor = initialize_db(app_db)
+        # app_conn, app_cursor = initialize_db(app_db)
 
         logger.info('Initializing dataframes')
         # initialize dataframes
-        subscribers = pd.read_sql('SELECT u.id, username, first_name, last_name, email FROM auth_user u INNER JOIN (SELECT DISTINCT user_id FROM subscriptions_subscription) s ON s.user_id = u.id WHERE is_active=1', app_conn)
-        subscriptions = pd.read_sql('SELECT user_id, theater_id FROM subscriptions_subscription s INNER JOIN auth_user u ON u.id = s.user_id WHERE u.is_active = 1', app_conn)
+        api_subscribers = pd.DataFrame(requests.get(os.environ['WEBAPP_BASEURL'] + 'api/users/', headers={'Authorization': f'Token {os.environ["API_KEY"]}'}).json())
+        api_subscriptions = pd.DataFrame(requests.get(os.environ['WEBAPP_BASEURL'] + 'api/subscriptions/', headers={'Authorization': f'Token {os.environ["API_KEY"]}'}).json())
+        
+        subscribers = sql('SELECT u.id, username, first_name, email FROM api_subscribers u INNER JOIN (SELECT DISTINCT user_id FROM api_subscriptions) s ON s.user_id = u.id WHERE is_active=1').df()
+        subscriptions = sql('SELECT user_id, theater_id FROM api_subscriptions s INNER JOIN api_subscribers u ON u.id = s.user_id WHERE u.is_active = 1').df()
         # zip_codes = pd.read_sql('SELECT * FROM zip_codes', conn)
         all_theaters = pd.read_sql('SELECT * FROM theaters', conn)
         all_movies = pd.read_sql('SELECT * FROM movies', conn)
@@ -383,7 +387,7 @@ def run(test=False):
         logger.error(traceback.format_exc())
     finally:
         conn.close()
-        app_conn.close()
+        # app_conn.close()
 
         end_time = datetime.datetime.now()
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
