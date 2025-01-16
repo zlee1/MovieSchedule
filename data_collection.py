@@ -26,6 +26,9 @@ from selenium.webdriver.chrome.options import Options
 
 logger = logging.getLogger('data_collection')
 
+zip_sleep = 15 # time to sleep when collecting theater data from zip codes
+theater_sleep = 30 # time to sleep when collecting showtime and movie data from theaters
+
 log_location = None # filepath for log
 driver_location = None # filepath for chrome driver
 app_db = None # filepath for webapp database - needed for subscription data
@@ -114,7 +117,7 @@ def get_soup(theater, url, date, browser):
 
         browser.get(full_url)
 
-        sleep(random.randint(5, 10)) # wait time incorporated so my ip doesn't get banned again
+        sleep(random.randint(theater_sleep//2, theater_sleep)) # wait time incorporated so my ip doesn't get banned again
 
         soup = BeautifulSoup(browser.page_source, 'html.parser')
 
@@ -235,7 +238,7 @@ def collect_theaters(zip_codes, conn, cursor):
         zip_search = urllib.request.urlopen(url)
         zip_search_page = BeautifulSoup(zip_search.read().decode('utf8'), 'html.parser')
 
-        sleep(15)
+        sleep(zip_sleep)
 
         zip_search.close()
 
