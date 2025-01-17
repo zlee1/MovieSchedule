@@ -55,7 +55,7 @@ def browser_init():
     options.add_argument('--blink-settings=imagesEnabled=false') # prevent image loading
 
     service = Service(executable_path=driver_location)
-        
+    
     # service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
 
     driver = webdriver.Chrome(service=service, options=options)

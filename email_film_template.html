@@ -1,0 +1,18 @@
+<div class="film-container" style="display: flex;border-top: 1px solid rgb(53, 53, 53)">
+    <div class="film-img" style="margin: 0.5em;border-radius: 0.5em;">
+        <a href="{movie_url}" target="_blank"><img src="{image_url}" style="height: 30em;border: 0.5em solid;border-color: rgb(0, 0, 0);border-radius: 1em;"></a>
+    </div>
+
+    <div class="film-info" style="margin: 0.5em;flex: 1 1 auto;">
+        <h2 style="margin-top: 0.25em;margin-bottom: 0.25em"><a href="{movie_url}" target="_blank" style="color:rgb(250, 235, 215)">{title} {year}</a></h2>
+        <div class="film-details" style="display: flex;gap: 0.75em">
+            <span>{runtime} min</span>
+            <span>|</span>
+            <span>{rating}</span>
+        </div>
+        <hr>
+        <div class="theaters" style="display: flex;flex-direction: column;margin-top: 0.75em;">
+            {theaters}
+        </div>
+    </div>
+</div>
