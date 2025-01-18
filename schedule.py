@@ -282,6 +282,58 @@ def schedule_simple_html(showtime_df, movie_df, theater_df, new_this_week, limit
     schedule += '</body>\n</html>'
     return schedule 
 
+def schedule_styled_html(showtime_df, movie_df, theater_df, new_this_week, limited_showings, subscriber):
+    with open('email_base_template.html', 'r') as f:
+        base_template = f.read()
+    
+    with open('email_film_template.html', 'r') as f:
+        film_template = f.read()
+
+    films = []
+    for movie_index, movie_row in movie_df.sort_values(by=['name'], inplace=False).iterrows():
+        theaters = sql(f"""
+                    SELECT DISTINCT 
+                        t.id
+                        ,t.name
+                        ,CASE WHEN n.theater_id IS NOT NULL THEN 1 ELSE 0 END AS new
+                        ,CASE WHEN l.theater_id IS NOT NULL THEN 1 ELSE 0 END AS limited
+                        ,(SELECT COUNT(*) FROM showtime_df s2 GROUP BY s2.movie_id, s2.theater_id HAVING s2.movie_id = s.movie_id AND s2.theater_id = s.theater_id) AS num_showings
+                    FROM showtime_df s
+                    INNER JOIN theater_df t ON t.id = s.theater_id
+                    LEFT JOIN new_this_week n ON n.movie_id = s.movie_id AND n.theater_id = t.id
+                    LEFT JOIN limited_showings l ON l.movie_id = s.movie_id AND l.theater_id = t.id
+                    WHERE s.movie_id = \'{movie_row["id"]}\'
+                    --GROUP BY t.id, t.name, s.movie_id
+                    ORDER BY t.name""").df()
+        
+        cur_template = '%s' % film_template
+        film_header = movie_row['name']
+        if(movie_row['release_year'] is not None and not pd.isna(movie_row['release_year'])):
+            film_header += f' ({int(movie_row["release_year"])})'
+
+        film_details = ''
+        
+        if(movie_row['runtime'] is not None and not pd.isna(movie_row['runtime'])):
+            film_details += str(int(movie_row['runtime'])) + ' min'
+        if(movie_row['rating'] is not None and not pd.isna(movie_row['rating'])):
+            film_details += f'{", " if film_details != "" else ""}{movie_row["rating"]}'
+
+        cur_template = cur_template.replace('{header}', film_header)
+        cur_template = cur_template.replace('{details}', film_details)
+        cur_template = cur_template.replace('{film_url}', movie_row['url'])
+        cur_template = cur_template.replace('{image_url}', movie_row['image_url'])
+        
+
+        theater_html = []
+        for index, row in theaters.iterrows():
+            theater_html.append(f"""\t<span style="margin-top: 0.5em;{'color:red;' if row['limited'] else ''}">{'<i>' if row['new'] else ''}{row['name']} <sup>x{row["num_showings"]}</sup>{'</i>' if row['new'] else ''}</p>\n""")
+        
+        cur_template = cur_template.replace('{theaters}', '<br>'.join(theater_html))
+
+        films.append(cur_template)
+
+    return base_template.replace('{films}', '\n'.join(films)).replace('{user}', subscriber)
+
 def run(test=False):
     try:
 
@@ -379,7 +431,8 @@ def run(test=False):
 
             logger.info('Generating schedule')
             # generate and email html schedule
-            schedule = schedule_simple_html(showtimes, movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
+            # schedule = schedule_simple_html(showtimes, movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
+            schedule = schedule_styled_html(showtimes, movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
             logger.info('Emailing schedule')
             send_email(schedule, subscriber_name, subscriber_email if not test else test_email, html=True) # if test mode active send all emails to test emails
 
