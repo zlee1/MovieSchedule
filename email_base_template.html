@@ -1,23 +1,20 @@
 <html>
-    <body style="font-family:Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif;color:rgb(250, 235, 215);background-color: rgb(29, 29, 29);">
-        <div class="header">
-            <span>Hi, {user}. Here is your breakdown of movies showing in theaters this week.</span>
+    <body style="font-family:sans-serif;color:rgb(250, 235, 215);background-color: rgb(29, 29, 29);">
+        <div class="header" style="margin: 0.75em">
+            <h2 style="margin: 0">Hi, {user}! Here is your breakdown of movies showing in theaters this week.</h2>
             <br>
+            <span>Movies new this week are <b>bolded</b>.</span>
             <br>
-            <span><b>Bolded</b> films are new this week.</span>
-            <br>
-            <span><span style="color: red">Red</span> films have a limited number of screenings.</span>
+            <span>Movies with 3 or fewer screenings this week are <span style="color: red">red</span>.</span>
         </div>
-        <div class="films" style="display: flex;flex-direction: column;justify-content: space-between;margin-top: 1em">
-
+        <div class="films" style="margin-top: 1em">
 
             {films}
 
-
         </div>
-        <div class="footer" style="display: flex;justify-content: space-around; border-top: 1px solid rgb(53, 53, 53)">
-            <span><a href="https://www.localmovieschedule.com/manage" target="_blank" style="color: rgb(250, 235, 215)">Manage Subscriptions</a></span>
-            <span><a href="https://www.localmovieschedule.com/unsubscribe/all" target="_blank" style="color: rgb(250, 235, 215)">Unsubscribe</a></span>
+        <div class="footer" style="display: flex;border-top: 1px solid rgb(53, 53, 53)">
+            <span style="margin-left: auto;margin-right: auto"><a href="https://www.localmovieschedule.com/manage" target="_blank" style="color: rgb(250, 235, 215)">Manage Subscriptions</a></span>
+            <span style="margin-left: auto;margin-right: auto"><a href="https://www.localmovieschedule.com/unsubscribe/all" target="_blank" style="color: rgb(250, 235, 215)">Unsubscribe</a></span>
         </div>
     </body>
 </html>
