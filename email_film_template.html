@@ -1,16 +1,25 @@
 <div class="film-container" style="margin-bottom: 0.25em;display: flex;border-top: 1px solid rgb(129, 129, 129)">
-    <div class="film-img" style="margin: 0.5em;margin-left: 0;margin-bottom: 0;border-radius: 0.25em;">
+    <div class="film-img" style="margin: 0.5em;margin-top: 0.75em;margin-left: 0;margin-bottom: 0.25em;border-radius: 0.25em;">
         <a href="{film_url}" target="_blank"><img src="{image_url}" style="width: 10em;border: 0.25em solid;border-color: rgb(27, 27, 27);border-radius: 0.5em;"></a>
     </div>
 
-    <div class="film-info" style="margin: 0.5em;margin-right: 0;margin-bottom: 0;width: 100%">
+    <div class="film-info" style="margin: 0.5em;margin-right: 0;margin-bottom: 0.25em;width: 100%">
 
-        <h2 style="margin-top: 0.25em;margin-bottom: 0em"><a href="{film_url}" target="_blank" style="color:rgb(27, 27, 27)">{header}</a></h2>
+        <h2 style="margin-top: 0em;margin-bottom: 0em"><a href="{film_url}" target="_blank" style="color:rgb(27, 27, 27)">{header}</a></h2>
 
         <div class="film-details" style="margin-top: 0">
             <div class="basic-details">
                 <span>{details}</span>
             </div>
+            <div class="rating-details" style="margin-left: auto; margin-right: 0">
+                <span>Critic Score: {rt_critic}%, Audience Score: {rt_audience}%</span>
+            </div>
+        </div>
+
+        <div class="synopsis" style="margin-top: 0.5em;">
+            <span><b>Genres</b>: {genres}</span>
+            <br>
+            <span style="margin-top: 0.5em"><b>Synopsis</b>: {synopsis}</span>
         </div>
         
         <hr>

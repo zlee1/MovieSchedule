@@ -12,6 +12,7 @@ import subprocess
 import threading
 from duckdb import sql
 import requests
+import unicodedata
 
 import warnings
 warnings.filterwarnings("ignore") # warnings are annoying!
@@ -26,8 +27,8 @@ from selenium.webdriver.chrome.options import Options
 
 logger = logging.getLogger('data_collection')
 
-zip_sleep = 15 # time to sleep when collecting theater data from zip codes
-theater_sleep = 30 # time to sleep when collecting showtime and movie data from theaters
+# urllib_sleep = 15 # time to sleep when collecting theater data from zip codes
+sleep_amt = 30 # time to sleep when collecting showtime and movie data from theaters
 
 log_location = None # filepath for log
 driver_location = None # filepath for chrome driver
@@ -35,6 +36,7 @@ app_db = None # filepath for webapp database - needed for subscription data
 
 progress_made = False # bool to keep track of whether any progess was made in a run
 
+collected_movies = []
 
 def browser_init():
     """Create Selenium browser instance.
@@ -117,7 +119,7 @@ def get_soup(theater, url, date, browser):
 
         browser.get(full_url)
 
-        sleep(random.randint(theater_sleep//2, theater_sleep)) # wait time incorporated so my ip doesn't get banned again
+        sleep(random.randint(sleep_amt//2, sleep_amt)) # wait time incorporated so my ip doesn't get banned again
 
         soup = BeautifulSoup(browser.page_source, 'html.parser')
 
@@ -238,7 +240,7 @@ def collect_theaters(zip_codes, conn, cursor):
         zip_search = urllib.request.urlopen(url)
         zip_search_page = BeautifulSoup(zip_search.read().decode('utf8'), 'html.parser')
 
-        sleep(zip_sleep)
+        sleep(sleep_amt)
 
         zip_search.close()
 
@@ -286,7 +288,8 @@ def insert_theaters(theaters, conn, cursor):
     global progress_made
     progress_made = True
 
-def collect_movies_from_theater(soup):
+def collect_movies_from_theater(soup, browser):
+    global collected_movies
     movies = []
     
     container = soup.find('ul', 'thtr-mv-list')
@@ -300,6 +303,10 @@ def collect_movies_from_theater(soup):
             continue;
 
         movie_id = movie['id'].replace('movie-', '')
+        if(movie_id in collected_movies):
+            continue;
+        else:
+            collected_movies.append(movie_id)
 
         image_sect = movie.find('div').find('a')
         try:
@@ -332,6 +339,7 @@ def collect_movies_from_theater(soup):
 
         movie_info_sect = detail_sect.find('li')
         info_text = get_text(movie_info_sect)
+
         try:
             movie_rating = info_text.split(', ')[0]
         except Exception as e:
@@ -349,9 +357,10 @@ def collect_movies_from_theater(soup):
         except Exception as e:
             movie_runtime = None
             logger.warning(f'{e}, error with parsing runtime from {info_text}')
+
+        movie_info = get_movie_info(movie_url, browser)
         
-        movies.append(
-            {
+        movie_dict = {
                 'id': movie_id
                 ,'name': movie_name
                 ,'url': movie_url
@@ -359,8 +368,10 @@ def collect_movies_from_theater(soup):
                 ,'runtime': movie_runtime
                 ,'rating': movie_rating
                 ,'image_url': movie_image_url
-            }
-        )
+        }
+        movie_dict.update(movie_info)
+
+        movies.append(movie_dict)
         
     return movies
 
@@ -444,7 +455,7 @@ def collect_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, red
                 continue
             soup = get_soup(row['name'], row['url'], date, browser)
             
-            new_movies += collect_movies_from_theater(soup)
+            new_movies += collect_movies_from_theater(soup, browser)
             new_showtimes += collect_showtimes_from_theater(soup)
         
         logger.info(f'Inserting movies and showtimes for {row["name"]}')
@@ -461,6 +472,34 @@ def collect_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, red
 
         # browser = browser_init()
 
+def get_movie_info(url, browser):
+    logger.info(f'Collecting movie info at {url}')
+    page = browser.get(url)
+    movie = BeautifulSoup(browser.page_source, 'html.parser')
+
+    sleep(sleep_amt)
+
+    ratings = movie.findAll('span', 'rottentomatoes-rating')
+    if(len(ratings) == 2):
+        rt_critic = int(''.join([i if i.isdigit() else '' for i in get_text(ratings[0])]))
+        rt_audience = int(''.join([i if i.isdigit() else '' for i in get_text(ratings[1])]))
+    else:
+        rt_critic, rt_audience = None, None
+
+    genre_container = movie.find('li', 'movie-detail__grv-item')
+    if(genre_container):
+        genres = ', '.join([i.strip() for i in unicodedata.normalize('NFKD', get_text(genre_container).replace('GENRE:', '').strip()).split(',')])
+    else:
+        genres = None
+
+    synopsis_container = movie.find(id='movie-detail-synopsis')
+    if(synopsis_container):
+        synopsis = get_text(synopsis_container)
+    else:
+        synopsis = None
+
+    return {'rt_critic': rt_critic, 'rt_audience': rt_audience, 'genres': genres, 'synopsis': synopsis}
+
 def theater_date_update(theater_id, conn, cursor):
     cursor.execute(f"UPDATE theaters SET date_updated = CURRENT_DATE WHERE id=\'{theater_id}\';")
     conn.commit()
@@ -471,7 +510,7 @@ def insert_movies(movies, conn, cursor):
     logger.info(f'Inserting {len(movies)} movies')
     for movie in movies:
         query = f"""
-        INSERT INTO movies(id, name, url, release_year, runtime, rating, image_url)
+        INSERT INTO movies(id, name, url, release_year, runtime, rating, image_url, rt_critic, rt_audience, genres, synopsis)
         VALUES(
             \'{movie.get('id')}\'
             ,\'{movie.get('name')}\'
@@ -480,6 +519,10 @@ def insert_movies(movies, conn, cursor):
             ,{movie.get('runtime') if movie.get('runtime') != None else 'NULL'}
             ,\'{movie.get('rating') if movie.get('rating') != None else ''}\'
             ,\'{movie.get('image_url') if movie.get('image_url') != None else ''}\'
+            ,\'{movie.get('rt_critic') if movie.get('rt_critic') != None else 'NULL'}\'
+            ,\'{movie.get('rt_audience') if movie.get('rt_audience') != None else 'NULL'}\'
+            ,\'{movie.get('genres') if movie.get('genres') != None else ''}\'
+            ,\'{movie.get('synopsis') if movie.get('synopsis') != None else ''}\'
         )
         ON CONFLICT(id) DO UPDATE SET
             name = COALESCE(excluded.name, name)
@@ -487,11 +530,16 @@ def insert_movies(movies, conn, cursor):
             ,runtime = COALESCE(excluded.runtime, runtime)
             ,rating = COALESCE(excluded.rating, rating)
             ,image_url = COALESCE(excluded.image_url, image_url)
+            ,rt_critic = COALESCE(excluded.rt_critic, rt_critic)
+            ,rt_audience = COALESCE(excluded.rt_audience, rt_audience)
+            ,genres = COALESCE(excluded.genres, genres)
+            ,synopsis = COALESCE(excluded.synopsis, synopsis)
             WHERE url = excluded.url
         ;
         """
 
         cursor.execute(query)
+        
     conn.commit()
     global progress_made
     progress_made = True

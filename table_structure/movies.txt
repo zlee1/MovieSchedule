@@ -6,4 +6,8 @@ CREATE TABLE movies(
     ,runtime int
     ,rating text
     ,image_url text
+    ,rt_critic int
+    ,rt_audience int
+    ,genres text
+    ,synopsis text
 );
