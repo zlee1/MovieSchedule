@@ -487,7 +487,7 @@ def get_movie_info(url, browser):
         rt_critic, rt_audience = None, None
 
     genre_container = movie.find('li', 'movie-detail__grv-item')
-    if(genre_container):
+    if(genre_container and 'GENRE' in get_text(genre_container)):
         genres = ', '.join([i.strip() for i in unicodedata.normalize('NFKD', get_text(genre_container).replace('GENRE:', '').strip()).split(',')])
     else:
         genres = None
@@ -495,6 +495,8 @@ def get_movie_info(url, browser):
     synopsis_container = movie.find(id='movie-detail-synopsis')
     if(synopsis_container):
         synopsis = get_text(synopsis_container)
+        if(synopsis == ''):
+            synopsis = None
     else:
         synopsis = None
 

@@ -322,8 +322,6 @@ def schedule_styled_html(showtime_df, movie_df, theater_df, new_this_week, limit
         cur_template = cur_template.replace('{details}', film_details)
         cur_template = cur_template.replace('{film_url}', movie_row['url'])
         cur_template = cur_template.replace('{image_url}', movie_row['image_url'])
-        cur_template = cur_template.replace('{genres}', movie_row['genres'])
-        cur_template = cur_template.replace('{synopsis}', movie_row['synopsis'])
 
         if(movie_row['rt_critic'] is not None and not pd.isna(movie_row['rt_critic']) and movie_row['rt_critic'] != 'NULL' and movie_row['rt_audience'] is not None and not pd.isna(movie_row['rt_audience']) and movie_row['rt_audience'] != 'NULL'):
             cur_template = cur_template.replace('{rt_critic}', movie_row['rt_critic'])
@@ -331,6 +329,16 @@ def schedule_styled_html(showtime_df, movie_df, theater_df, new_this_week, limit
         else:
             cur_template = cur_template.replace('{rt_critic}', '--')
             cur_template = cur_template.replace('{rt_audience}', '--')
+
+        if(movie_row['genres'] is not None and not pd.isna(movie_row['genres']) and movie_row['genres'] != ''):
+            cur_template = cur_template.replace('{genres}', movie_row['genres'])
+        else:
+            cur_template = cur_template.replace('{genres}', 'N/A')
+
+        if(movie_row['synopsis'] is not None and not pd.isna(movie_row['synopsis']) and movie_row['synopsis'] != ''):
+            cur_template = cur_template.replace('{synopsis}', movie_row['synopsis'])
+        else:
+            cur_template = cur_template.replace('{synopsis}', 'N/A')
         
 
         theater_html = []
