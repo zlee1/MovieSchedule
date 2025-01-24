@@ -9,7 +9,6 @@ import sqlite3
 import logging
 import os
 import subprocess
-import threading
 from duckdb import sql
 import requests
 import unicodedata
@@ -665,8 +664,6 @@ def run(vpn=True):
 
     if(vpn):
         logger.info(f'Starting VPN')
-        # vpn_thread = threading.Thread(target=subprocess.call, args=['sudo', 'protonvpn', 'c', '-f'])
-        # vpn_thread.start()
 
         subprocess.call(['sudo', 'protonvpn', 'c', '-f'])
 
