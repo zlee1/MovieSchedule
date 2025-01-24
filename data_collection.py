@@ -622,7 +622,7 @@ def collect_data():
             logger.error('Attempted to close non-existent webdriver')
 
         try:
-            subprocess.call(['pkill', 'protonvpn'])
+            subprocess.call(['sudo', 'protonvpn', 'd'])
         except:
             logger.error('Attempted to end non-existent vpn session')
 
@@ -665,8 +665,10 @@ def run(vpn=True):
 
     if(vpn):
         logger.info(f'Starting VPN')
-        vpn_thread = threading.Thread(target=subprocess.call, args=['protonvpn-app'])
-        vpn_thread.start()
+        # vpn_thread = threading.Thread(target=subprocess.call, args=['sudo', 'protonvpn', 'c', '-f'])
+        # vpn_thread.start()
+
+        subprocess.call(['sudo', 'protonvpn', 'c', '-f'])
 
         sleep(30)
 
@@ -703,7 +705,7 @@ def run(vpn=True):
     if(vpn):
         logger.info('Ending vpn session')
 
-        subprocess.call(['pkill', 'protonvpn'])
+        subprocess.call(['sudo', 'protonvpn', 'd'])
     
     logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
 
