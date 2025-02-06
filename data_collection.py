@@ -8,6 +8,7 @@ import pandas as pd
 import sqlite3
 import logging
 import os
+import sys
 import subprocess
 from duckdb import sql
 import requests
@@ -37,7 +38,7 @@ progress_made = False # bool to keep track of whether any progess was made in a 
 
 collected_movies = []
 
-def browser_init():
+def browser_init(headless=False):
     """Create Selenium browser instance.
     
     Returns:
@@ -47,7 +48,9 @@ def browser_init():
 
     options = Options()
 
-    #options.add_argument("--headless=new") # run browser without opening window - commented because it seems to crash raspberry pi
+    if(headless):
+        logger.info('Running in headless mode')
+        options.add_argument("--headless=new") # run browser without opening window
 
     options.add_argument("--no-sandbox") #bypass OS security model
     options.add_argument("--disable-dev-shm-usage") #overcome limited resource problems
@@ -576,13 +579,13 @@ def insert_showtimes(showtimes, conn, cursor):
     global progress_made
     progress_made = True
 
-def collect_data():
+def collect_data(headless = False):
     conn = None
     driver = None
 
     try:
         logger.info('Initializing browser')
-        driver = browser_init()
+        driver = browser_init(headless)
 
         logger.info('Connecting to database')
         conn, cursor = initialize_db(os.path.join('sqlite3', 'moviedb'))
@@ -628,7 +631,7 @@ def collect_data():
         logger.info('Closed db connection and webdriver')
         return success
 
-def run(vpn=True):
+def run(vpn=True, headless=False):
 
     global logger
     global log_location
@@ -679,7 +682,7 @@ def run(vpn=True):
         runs += 1
         logger.info(f'Run - starting attempt {runs}')
         try:
-            success = collect_data()
+            success = collect_data(headless)
         except Exception:
             logger.error(traceback.format_exc())
             success = 0
@@ -709,4 +712,4 @@ def run(vpn=True):
     return success
 
 if __name__ == "__main__":
-    run()
+    run(headless = 1 if 'headless' in sys.argv else 0)

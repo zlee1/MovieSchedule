@@ -57,8 +57,12 @@ def send_failure_email(step, exception_traceback=None):
 
 def run():
     try:
+        headless = 0
         if('test' in sys.argv):
             logger.warning('Running in test mode - all schedule emails will go to test email')
+        if('headless' in sys.argv):
+            headless = 1
+            logger.info('Running in headless mode')
 
         start_time = datetime.now()
 
@@ -78,16 +82,16 @@ def run():
         for i in range(5):
             logger.info('Starting data collection')
             step = 'data_collection'
-            success = data_collection.run()
+            success = data_collection.run(headless=headless)
             logger.info('Data collection done')
 
-            if(not success):
+            if(success is None or not success):
                 logger.error(f'Data collection attempt {i} failed. Trying again in {wait_time} seconds')
                 sleep(wait_time)
             else:
                 break
 
-        if(success):
+        if(success is not None and success):
             logger.info('Starting schedule')
             step = 'schedule'
             schedule.run(test = 'test' in sys.argv)
