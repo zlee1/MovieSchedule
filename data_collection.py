@@ -310,20 +310,23 @@ def collect_movies_from_theater(soup, browser):
         else:
             collected_movies.append(movie_id)
 
-        image_sect = movie.find('div').find('a')
+        image_sect = movie.find('img')#.find('a')
         try:
             # accounting for 2 types of image link storage
-            if('data-fd-lazy-image' in image_sect.attrs):
-                movie_image_url = image_sect['data-fd-lazy-image']
-            else:
-                movie_image_url = image_sect['style'].replace('background-image: url(\"', '').replace('\");', '')
+            # if('data-fd-lazy-image' in image_sect.attrs):
+            #     movie_image_url = image_sect['data-fd-lazy-image']
+            # else:
+            #     movie_image_url = image_sect['style'].replace('background-image: url(\"', '').replace('\");', '')
+            movie_image_url = image_sect['src']
         except:
             logger.warning(f'no image found for movie {movie_id}')
             movie_image_url = None
 
-        detail_sect = movie.find('div', 'thtr-mv-list__detail')
+        # detail_sect = movie.find('div', 'thtr-mv-list__detail')
+        detail_sect = movie.find('section', 'shared-movie-showtimes__movie-details')
 
-        title_sect = detail_sect.find('h2', 'thtr-mv-list__detail-title')
+        # title_sect = detail_sect.find('h2', 'thtr-mv-list__detail-title')
+        title_sect = detail_sect.find('a', 'shared-movie-showtimes__movie-title-link')
         movie_name = get_text(title_sect)
 
         movie_year = None
@@ -337,28 +340,28 @@ def collect_movies_from_theater(soup, browser):
         if(movie_year is not None):
             movie_name = movie_name[:-7]
 
-        movie_url = 'https://www.fandango.com' + title_sect.find('a')['href']
+        movie_url = 'https://www.fandango.com' + title_sect['href']
 
-        movie_info_sect = detail_sect.find('li')
-        info_text = get_text(movie_info_sect)
+        movie_info_sect = detail_sect.find('p', 'shared-showtimes__movie-data shared-showtimes__data-text')
 
         try:
-            movie_rating = info_text.split(', ')[0]
+            movie_rating = get_text(movie_info_sect.find('data', 'shared-showtimes__movie-rating')).split(':')[1].strip()
         except Exception as e:
             movie_rating = None
             logger.warning(f'{e}, error with parsing rating')
         
+        runtime_text = get_text(movie_info_sect).split(':')[-1].strip()
         try:
-            if('min' not in info_text.split(', ')[1]):
-                movie_runtime = int(info_text.split(', ')[1].replace(' ', '').replace('hr', ''))*60
+            if('min' not in runtime_text):
+                movie_runtime = int(runtime_text.replace(' ', '').replace('hr', ''))*60
                 logger.warning(f'hr only runtime {movie_runtime}')
-            else:
-                raw_runtime = info_text.split(', ')[1].replace(' min', '').replace(' ', '').split('hr')
+            else: 
+                raw_runtime = runtime_text.replace(' min', '').replace(' ', '').split('hr')
 
                 movie_runtime = int(raw_runtime[0])*60 + int(raw_runtime[1])
         except Exception as e:
             movie_runtime = None
-            logger.warning(f'{e}, error with parsing runtime from {info_text}')
+            logger.warning(f'{e}, error with parsing runtime from {get_text(movie_info_sect)}')
 
         movie_info = get_movie_info(movie_url, browser)
         
@@ -390,48 +393,48 @@ def collect_showtimes_from_theater(soup):
         if(not movie.parent.__eq__(container)): # list item must be direct child of container
             continue;
 
-        for showtime_sect in movie.find_all('div', 'thtr-mv-list__amenity-group'):
-            for showtime_btn in showtime_sect.find_all('li', 'showtimes-btn-list__item'):
-                showtime = showtime_btn.find('a')
+        # for showtime_sect in movie.find_all('div', 'thtr-mv-list__amenity-group'):
+        for showtime_btn in movie.find_all('li', 'showtimes-btn-list__item'):
+            showtime = showtime_btn.find('a')
 
-                if(showtime is None): # showtime took place in the past
-                    continue;
+            if(showtime is None): # showtime took place in the past
+                continue;
 
-                showtime_url = showtime['href']
+            showtime_url = showtime['href']
 
-                movie_id = movie['id'].replace('movie-', '')
+            movie_id = movie['id'].replace('movie-', '')
 
-                theater_id = showtime_url.split('tid=')[1].split('&')[0].lower()
+            theater_id = showtime_url.split('tid=')[1].split('&')[0].lower()
 
-                showtime_date = showtime_url.split('sdate=')[1].split('%')[0]
+            showtime_date = showtime_url.split('sdate=')[1].split('%')[0]
 
-                showtime_time = get_text(showtime)
+            showtime_time = get_text(showtime)
 
-                if('p' in showtime_time):
-                    if(showtime_time.split(':')[0] != '12'):
-                        showtime_time = f"{int(showtime_time.split(':')[0])+12}:{showtime_time.split(':')[1].replace('p', ':00')}"
-                    else:
-                        showtime_time = showtime_time.replace('p', ':00')
+            if('p' in showtime_time):
+                if(showtime_time.split(':')[0] != '12'):
+                    showtime_time = f"{int(showtime_time.split(':')[0])+12}:{showtime_time.split(':')[1].replace('p', ':00')}"
                 else:
-                    showtime_time = showtime_time.replace('a', ':00')
-                    if(len(showtime_time.split(':')[0]) == 1):
-                        showtime_time = '0' + showtime_time
+                    showtime_time = showtime_time.replace('p', ':00')
+            else:
+                showtime_time = showtime_time.replace('a', ':00')
+                if(len(showtime_time.split(':')[0]) == 1):
+                    showtime_time = '0' + showtime_time
 
-                showtime_id = f'{movie_id}_{theater_id}_{showtime_date}_{showtime_time}'
+            showtime_id = f'{movie_id}_{theater_id}_{showtime_date}_{showtime_time}'
 
-                showtime_format = None
+            showtime_format = None
 
-                showtimes.append(
-                    {
-                        'id': showtime_id
-                        ,'movie_id': movie_id
-                        ,'theater_id': theater_id
-                        ,'url': showtime_url
-                        ,'date': showtime_date
-                        ,'time': showtime_time
-                        ,'format': showtime_format
-                    }
-                )
+            showtimes.append(
+                {
+                    'id': showtime_id
+                    ,'movie_id': movie_id
+                    ,'theater_id': theater_id
+                    ,'url': showtime_url
+                    ,'date': showtime_date
+                    ,'time': showtime_time
+                    ,'format': showtime_format
+                }
+            )
 
     return showtimes
 
@@ -631,7 +634,7 @@ def collect_data(headless = False):
         logger.info('Closed db connection and webdriver')
         return success
 
-def run(vpn=True, headless=False):
+def run(vpn=False, headless=False):
 
     global logger
     global log_location

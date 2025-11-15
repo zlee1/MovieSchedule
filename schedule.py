@@ -440,9 +440,9 @@ def run(test=False):
 
             # # data only includes theaters that the subscriber subscribes to
             theaters = sql(f'SELECT * FROM all_theaters WHERE id IN {theater_ids} ORDER BY name').df()
-            showtimes = sql(f'SELECT * FROM all_showtimes WHERE theater_id IN {theater_ids}').df()
+            showtimes = sql(f'SELECT * FROM all_showtimes WHERE CAST(theater_id as varchar(15)) IN {theater_ids}').df()
             movies = sql(f'SELECT * FROM all_movies WHERE id IN (SELECT movie_id FROM showtimes)').df()
-            new_this_week = sql(f'SELECT * FROM all_new_this_week WHERE theater_id IN {theater_ids}').df()
+            new_this_week = sql(f'SELECT * FROM all_new_this_week WHERE CAST(theater_id AS varchar(15)) IN {theater_ids}').df()
             # only movies with 3 or less screenings at a particular theater in the next week. if something is showing 5 times at one theater, but 2 at another, it will be included here only for the theater with 2 screenings
             limited_showings = sql('SELECT movie_id, theater_id, COUNT(*) AS count FROM showtimes GROUP BY movie_id, theater_id HAVING COUNT(*) <= 3 ORDER BY theater_id, movie_id').df()
 
