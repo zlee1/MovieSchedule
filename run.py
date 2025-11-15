@@ -7,14 +7,53 @@ import logging
 import platform
 from datetime import datetime
 import os
+from os.path import basename
 import smtplib
 from email.message import EmailMessage
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email import Encoders
 from time import sleep
 import sys
 
 logger = logging.getLogger('run')
 
 log_location = None
+
+def send_completion_email(start_time=datetime.now(), end_time=datetime.now()):
+    logger.info('Sending completion email')
+
+    # read email credentials
+    with open(os.path.join('data', 'email_credentials.txt'), 'r') as f:
+        host = f.readline().replace('\n', '')
+        email = f.readline().replace('\n', '')
+        password = f.readline().replace('\n', '')
+        recipient_email = f.readline().replace('\n', '')
+
+    msg = EmailMessage()
+    msg['From'] = email
+    msg['To'] = recipient_email
+    msg['Subject'] = f'Movie Schedule process for {datetime.now().date()} has completed'
+
+    msg.set_content(f'The process started at {start_time} and ended at {end_time}, executing in {(end_time-start_time).total_seconds()}. The log file has been attached.')
+
+    with open(log_location, 'rb') as f:
+        msg.add_attachment(
+            f.read(),
+            maintype="text", subtype="plain",
+            filename=os.path.basename(log_location))
+
+    server = smtplib.SMTP(host, 587)
+    server.ehlo()
+    server.starttls()
+    server.ehlo()
+    server.login(email, password)
+
+    server.sendmail(email, recipient_email, msg.as_string())
+    
+    server.quit()
+
 
 def send_failure_email(step, exception_traceback=None):
     logger.info('Sending failure email')
@@ -110,6 +149,7 @@ def run():
         send_failure_email(step, traceback.format_exc())
     finally:
         end_time = datetime.now()
+        send_completion_email(start_time, end_time)
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
     
 
