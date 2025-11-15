@@ -7,13 +7,8 @@ import logging
 import platform
 from datetime import datetime
 import os
-from os.path import basename
 import smtplib
 from email.message import EmailMessage
-from email.mime.base import MIMEBase
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email import Encoders
 from time import sleep
 import sys
 
@@ -21,7 +16,7 @@ logger = logging.getLogger('run')
 
 log_location = None
 
-def send_completion_email(start_time=datetime.now(), end_time=datetime.now()):
+def send_completion_email(log_location, start_time=datetime.now(), end_time=datetime.now()):
     logger.info('Sending completion email')
 
     # read email credentials
@@ -36,7 +31,7 @@ def send_completion_email(start_time=datetime.now(), end_time=datetime.now()):
     msg['To'] = recipient_email
     msg['Subject'] = f'Movie Schedule process for {datetime.now().date()} has completed'
 
-    msg.set_content(f'The process started at {start_time} and ended at {end_time}, executing in {(end_time-start_time).total_seconds()}. The log file has been attached.')
+    msg.set_content(f'The process started at {start_time} and ended at {end_time}, executing in {(end_time-start_time).total_seconds()} seconds. The log file has been attached.')
 
     with open(log_location, 'rb') as f:
         msg.add_attachment(
@@ -149,7 +144,7 @@ def run():
         send_failure_email(step, traceback.format_exc())
     finally:
         end_time = datetime.now()
-        send_completion_email(start_time, end_time)
+        send_completion_email(log_location, start_time, end_time)
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
     
 
