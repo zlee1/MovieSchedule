@@ -38,29 +38,52 @@ progress_made = False # bool to keep track of whether any progess was made in a 
 
 collected_movies = []
 
-def browser_init(headless=False):
+options = None
+service = None
+
+headless = False
+
+def browser_init():
     """Create Selenium browser instance.
     
     Returns:
     selenium browser instance
     """
+    global options
+    global service
+    global headless
+
     logger.info('Creating new browser instance')
 
-    options = Options()
+    if options is None:
 
-    if(headless):
-        logger.info('Running in headless mode')
-        options.add_argument("--headless=new") # run browser without opening window
+        options = Options()
 
-    options.add_argument("--no-sandbox") #bypass OS security model
-    options.add_argument("--disable-dev-shm-usage") #overcome limited resource problems
+        if(headless):
+            logger.info('Running in headless mode')
+            options.add_argument("--headless=new") # run browser without opening window
 
-    # options.add_argument("--log-level=3") # log only errors
-    options.add_argument('--blink-settings=imagesEnabled=false') # prevent image loading
+        # cpu optimizations
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-background-timer-throttling")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-client-side-phishing-detection")
+        options.add_argument("--disable-crash-reporter")
+        options.add_argument("--disable-oopr-debug-crash-dump")
+        options.add_argument("--no-crash-upload")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-low-res-tiling")
+        options.add_argument("--log-level=3")
+        options.add_argument("--silent")
+        options.add_argument('--blink-settings=imagesEnabled=false') # prevent image loading
 
-    service = Service(executable_path=driver_location)
+    if service is None:
+        service = Service(executable_path=driver_location)
     
-    # service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
+        # service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
 
     driver = webdriver.Chrome(service=service, options=options)
     driver.set_page_load_timeout(300)
@@ -95,7 +118,7 @@ def get_zip_codes(conn):
     # zip codes to check are those with active subscriptions
     return list(pd.read_sql('SELECT DISTINCT zip_code FROM subscriptions WHERE active=1;', conn)['zip_code'])
 
-def get_soup(theater, url, date, browser):
+def get_soup(theater, url, date):
     """Get BeautifulSoup object of a page
 
     Keyword Arguments:
@@ -119,11 +142,16 @@ def get_soup(theater, url, date, browser):
     # try to get html until page loads properly - max 10 attempts
     for i in range(10):
 
+        browser = browser_init()
+
         browser.get(full_url)
 
-        sleep(random.randint(sleep_amt//2, sleep_amt)) # wait time incorporated so my ip doesn't get banned again
 
         soup = BeautifulSoup(browser.page_source, 'html.parser')
+
+        browser.quit()
+        
+        sleep(random.randint(sleep_amt//2, sleep_amt)) # wait time incorporated so my ip doesn't get banned again
 
         # if offline__header exists, page hasn't loaded properly
         container = soup.find('h1', 'offline__header')
@@ -218,8 +246,8 @@ def insert_zip_code(zip_code, theater_id, cursor):
     query = f"""
         INSERT OR IGNORE INTO zip_codes(zip_code, theater_id)
         VALUES(
-            \'{zip_code}\'
-            ,\'{theater_id}\'
+            '{zip_code}'
+            ,'{theater_id}'
         );
         """
     
@@ -272,10 +300,10 @@ def insert_theaters(theaters, conn, cursor):
         query = f"""
         INSERT INTO theaters(id, name, url, address)
         VALUES(
-            \'{row['id']}\'
-            ,\'{row['name'].replace('\'', '\'\'')}\'
-            ,\'{row['url'] if row['url'] != None else ''}\'
-            ,\'\'
+            '{row['id']}'
+            ,'{row['name'].replace("'", "''")}'
+            ,'{row['url'] if row['url'] != None else ''}'
+            ,''
         )
         ON CONFLICT(id) DO UPDATE SET
             name = COALESCE(excluded.name, name)
@@ -290,7 +318,7 @@ def insert_theaters(theaters, conn, cursor):
     global progress_made
     progress_made = True
 
-def collect_movies_from_theater(soup, browser):
+def collect_movies_from_theater(soup):
     global collected_movies
     movies = []
     
@@ -363,7 +391,7 @@ def collect_movies_from_theater(soup, browser):
             movie_runtime = None
             logger.warning(f'{e}, error with parsing runtime from {get_text(movie_info_sect)}')
 
-        movie_info = get_movie_info(movie_url, browser)
+        movie_info = get_movie_info(movie_url)
         
         movie_dict = {
                 'id': movie_id
@@ -438,7 +466,7 @@ def collect_showtimes_from_theater(soup):
 
     return showtimes
 
-def collect_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, redo=False):
+def collect_all_movies_and_showtimes(theaters, dates, conn, cursor, redo=False):
     # skip theaters that have showtime data one week away - these have already gone through the data collection process
     # smaller theaters that do not have screenings one week away but do have screenings within the following week will be rechecked in this scenario, but this is uncommon and shouldn't be an issue
     if(not redo):
@@ -458,9 +486,9 @@ def collect_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, red
             if(row['date_updated'] is not None and date <= datetime.strptime(row['date_updated'], '%Y-%m-%d').date()+timedelta(days=6)):
                 logger.info(f'Skipping date {datetime.strftime(date, "%Y-%m-%d")} for theater {row["name"]} - data already collected.')
                 continue
-            soup = get_soup(row['name'], row['url'], date, browser)
+            soup = get_soup(row['name'], row['url'], date)
             
-            new_movies += collect_movies_from_theater(soup, browser)
+            new_movies += collect_movies_from_theater(soup)
             new_showtimes += collect_showtimes_from_theater(soup)
         
         logger.info(f'Inserting movies and showtimes for {row["name"]}')
@@ -477,10 +505,14 @@ def collect_all_movies_and_showtimes(theaters, dates, browser, conn, cursor, red
 
         # browser = browser_init()
 
-def get_movie_info(url, browser):
+def get_movie_info(url):
     logger.info(f'Collecting movie info at {url}')
+    browser = browser_init()
+
     page = browser.get(url)
     movie = BeautifulSoup(browser.page_source, 'html.parser')
+
+    browser.quit()
 
     sleep(sleep_amt)
 
@@ -508,7 +540,7 @@ def get_movie_info(url, browser):
     return {'rt_critic': rt_critic, 'rt_audience': rt_audience, 'genres': genres, 'synopsis': synopsis}
 
 def theater_date_update(theater_id, conn, cursor):
-    cursor.execute(f"UPDATE theaters SET date_updated = CURRENT_DATE WHERE id=\'{theater_id}\';")
+    cursor.execute(f"UPDATE theaters SET date_updated = CURRENT_DATE WHERE id='{theater_id}';")
     conn.commit()
     global progress_made
     progress_made = True
@@ -519,17 +551,17 @@ def insert_movies(movies, conn, cursor):
         query = f"""
         INSERT INTO movies(id, name, url, release_year, runtime, rating, image_url, rt_critic, rt_audience, genres, synopsis)
         VALUES(
-            \'{movie.get('id')}\'
-            ,\'{movie.get('name')}\'
-            ,\'{movie.get('url')}\'
+            '{movie.get('id')}'
+            ,'{movie.get('name')}'
+            ,'{movie.get('url')}'
             ,{movie.get('release_year') if movie.get('release_year') != None else 'NULL'}
             ,{movie.get('runtime') if movie.get('runtime') != None else 'NULL'}
-            ,\'{movie.get('rating') if movie.get('rating') != None else ''}\'
-            ,\'{movie.get('image_url') if movie.get('image_url') != None else ''}\'
-            ,\'{movie.get('rt_critic') if movie.get('rt_critic') != None else 'NULL'}\'
-            ,\'{movie.get('rt_audience') if movie.get('rt_audience') != None else 'NULL'}\'
-            ,\'{movie.get('genres') if movie.get('genres') != None else ''}\'
-            ,\'{movie.get('synopsis') if movie.get('synopsis') != None else ''}\'
+            ,'{movie.get('rating') if movie.get('rating') != None else ''}'
+            ,'{movie.get('image_url') if movie.get('image_url') != None else ''}'
+            ,'{movie.get('rt_critic') if movie.get('rt_critic') != None else 'NULL'}'
+            ,'{movie.get('rt_audience') if movie.get('rt_audience') != None else 'NULL'}'
+            ,'{movie.get('genres') if movie.get('genres') != None else ''}'
+            ,'{movie.get('synopsis') if movie.get('synopsis') != None else ''}'
         )
         ON CONFLICT(id) DO UPDATE SET
             name = COALESCE(excluded.name, name)
@@ -557,13 +589,13 @@ def insert_showtimes(showtimes, conn, cursor):
         query = f"""
         INSERT INTO showtimes(id, movie_id, theater_id, url, date, time, format)
         VALUES(
-            \'{showtime.get('id')}\'
-            ,\'{showtime.get('movie_id')}\'
-            ,\'{showtime.get('theater_id')}\'
-            ,\'{showtime.get('url')}\'
-            ,\'{showtime.get('date')}\'
-            ,\'{showtime.get('time')}\'
-            ,\'{showtime.get('format') if showtime.get('format') != None else ''}\'
+            '{showtime.get('id')}'
+            ,'{showtime.get('movie_id')}'
+            ,'{showtime.get('theater_id')}'
+            ,'{showtime.get('url')}'
+            ,'{showtime.get('date')}'
+            ,'{showtime.get('time')}'
+            ,'{showtime.get('format') if showtime.get('format') != None else ''}'
         )
         ON CONFLICT(id) DO UPDATE SET
             movie_id = COALESCE(excluded.movie_id, movie_id)
@@ -582,13 +614,13 @@ def insert_showtimes(showtimes, conn, cursor):
     global progress_made
     progress_made = True
 
-def collect_data(headless = False):
+def collect_data():
     conn = None
-    driver = None
+    # driver = None
 
     try:
         logger.info('Initializing browser')
-        driver = browser_init(headless)
+        # driver = browser_init()
 
         logger.info('Connecting to database')
         conn, cursor = initialize_db(os.path.join('sqlite3', 'moviedb'))
@@ -604,11 +636,12 @@ def collect_data(headless = False):
         insert_theaters(app_theater_df, conn, cursor)
 
         theater_ids = list(sql('SELECT DISTINCT id FROM app_theater_df').df()['id'])
-
-        theater_df = pd.read_sql(f"SELECT * FROM theaters WHERE id IN ({','.join(['\''+id+'\'' for id in theater_ids])})", conn)
+        
+        ids = ','.join(['\''+id+'\'' for id in theater_ids])
+        theater_df = pd.read_sql(f"SELECT * FROM theaters WHERE id IN ({ids})", conn)
 
         logger.info('Collecting movies and showtimes')
-        collect_all_movies_and_showtimes(theater_df, [datetime.now().date() + timedelta(days=i) for i in range(7)], driver, conn, cursor, redo=False)
+        collect_all_movies_and_showtimes(theater_df, [datetime.now().date() + timedelta(days=i) for i in range(7)], conn, cursor, redo=False)
 
     except Exception:
         logging.error(traceback.format_exc())
@@ -621,11 +654,6 @@ def collect_data(headless = False):
         except: 
             logger.error('Attempted to close non-existent database connection')
 
-        try: 
-            driver.close()
-        except: 
-            logger.error('Attempted to close non-existent webdriver')
-
         try:
             subprocess.call(['sudo', 'protonvpn', 'd'])
         except:
@@ -634,13 +662,15 @@ def collect_data(headless = False):
         logger.info('Closed db connection and webdriver')
         return success
 
-def run(vpn=False, headless=False):
+def run(vpn=False, headless_val=False):
 
     global logger
     global log_location
     global driver_location
     global app_db
     global progress_made
+    global headless 
+    headless = headless_val
 
     start_time = datetime.now()
 
@@ -685,7 +715,7 @@ def run(vpn=False, headless=False):
         runs += 1
         logger.info(f'Run - starting attempt {runs}')
         try:
-            success = collect_data(headless)
+            success = collect_data()
         except Exception:
             logger.error(traceback.format_exc())
             success = 0
@@ -715,4 +745,4 @@ def run(vpn=False, headless=False):
     return success
 
 if __name__ == "__main__":
-    run(headless = 1 if 'headless' in sys.argv else 0)
+    run(headless_val = 1 if 'headless' in sys.argv else 0)

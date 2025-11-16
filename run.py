@@ -116,7 +116,7 @@ def run():
         for i in range(5):
             logger.info('Starting data collection')
             step = 'data_collection'
-            success = data_collection.run(headless=headless)
+            success = data_collection.run(headless_val=headless)
             logger.info('Data collection done')
 
             if(success is None or not success):
@@ -144,8 +144,8 @@ def run():
         send_failure_email(step, traceback.format_exc())
     finally:
         end_time = datetime.now()
-        send_completion_email(log_location, start_time, end_time)
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
+        send_completion_email(log_location, start_time, end_time)
     
 
 if __name__ == "__main__":
