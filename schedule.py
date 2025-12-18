@@ -7,6 +7,7 @@ import platform
 import logging
 import os
 import requests
+import sys
 
 import smtplib
 from email.mime.text import MIMEText
@@ -28,7 +29,7 @@ def initialize_db(db_name):
     conn = sqlite3.connect(db_name)
     return conn, conn.cursor()
 
-def send_email(content, subscriber, to, html=False, dates=None):
+def send_email(content, subscriber, to, subscriber_id, html=False, dates=None):
     """Send generated schedule to subscriber
 
     Keyword arguments:
@@ -77,7 +78,7 @@ def send_email(content, subscriber, to, html=False, dates=None):
     
     server.quit()
 
-    logger.info(f'Schedule sent to {subscriber}')
+    logger.info(f'Schedule sent to {subscriber_id}: {subscriber}')
 
 def showtime_prettify(showtime_df, movie_df, theater_df, include_schedule = True, include_titles = False, time_count = False):
     """Create formatted schedule.
@@ -351,7 +352,7 @@ def schedule_styled_html(showtime_df, movie_df, theater_df, new_this_week, limit
 
     return base_template.replace('{films}', '\n'.join(films)).replace('{user}', subscriber)
 
-def run(test=False):
+def run(test=False, specific_subscribers=None):
     try:
 
         global logger
@@ -427,6 +428,9 @@ def run(test=False):
         for index, row in subscribers.iterrows():
 
             subscriber_id = row['id']
+            
+            if(specific_subscribers is not None and str(subscriber_id) not in specific_subscribers):
+                continue
 
             first_name = row['first_name']
             subscriber_name = first_name if first_name is not None and first_name != '' else row['username']
@@ -451,7 +455,7 @@ def run(test=False):
             # schedule = schedule_simple_html(showtimes, movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
             schedule = schedule_styled_html(showtimes, movies, theaters, new_this_week, limited_showings, subscriber=subscriber_name)
             logger.info('Emailing schedule')
-            send_email(schedule, subscriber_name, subscriber_email if not test else test_email, html=True) # if test mode active send all emails to test emails
+            send_email(schedule, subscriber_name, subscriber_email if not test else test_email, subscriber_id, html=True) # if test mode active send all emails to test emails
 
     except Exception:
         logger.error(traceback.format_exc())
@@ -463,4 +467,4 @@ def run(test=False):
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
 
 if __name__ == "__main__":
-	run()
+	run(test=False, specific_subscribers=sys.argv[1:])

@@ -58,6 +58,7 @@ def browser_init():
     if options is None:
 
         options = Options()
+        # options = webdriver.ChromeOptions() # if on pythonanywhere
 
         if(headless):
             logger.info('Running in headless mode')
@@ -86,6 +87,7 @@ def browser_init():
         # service.creationflags = CREATE_NO_WINDOW # fully suppress selenium logging
 
     driver = webdriver.Chrome(service=service, options=options)
+    # driver = webdriver.Chrome(options=options) # if on pythonanywhere
     driver.set_page_load_timeout(300)
     
     logger.info('New browser created')
@@ -636,7 +638,7 @@ def collect_data():
         insert_theaters(app_theater_df, conn, cursor)
 
         theater_ids = list(sql('SELECT DISTINCT id FROM app_theater_df').df()['id'])
-        
+
         ids = ','.join(['\''+id+'\'' for id in theater_ids])
         theater_df = pd.read_sql(f"SELECT * FROM theaters WHERE id IN ({ids})", conn)
 
