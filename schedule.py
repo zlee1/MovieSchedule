@@ -78,7 +78,7 @@ def send_email(content, subscriber, to, subscriber_id, html=False, dates=None):
     
     server.quit()
 
-    logger.info(f'Schedule sent to {subscriber_id}: {subscriber}')
+    logger.info(f'Schedule sent to user {subscriber_id}: {subscriber}')
 
 def showtime_prettify(showtime_df, movie_df, theater_df, include_schedule = True, include_titles = False, time_count = False):
     """Create formatted schedule.
@@ -436,7 +436,7 @@ def run(test=False, specific_subscribers=None):
             subscriber_name = first_name if first_name is not None and first_name != '' else row['username']
             subscriber_email = row['email']
 
-            logger.info(f'Schedule for {subscriber_name}')
+            logger.info(f'Schedule for user {subscriber_id}: {subscriber_name}')
 
             logger.info('Gathering subscription-specific data')
             # ids of theaters that the subscriber subscribes to
