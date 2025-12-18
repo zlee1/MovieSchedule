@@ -428,7 +428,7 @@ def run(test=False, specific_subscribers=None):
         for index, row in subscribers.iterrows():
 
             subscriber_id = row['id']
-            
+
             if(specific_subscribers is not None and str(subscriber_id) not in specific_subscribers):
                 continue
 
@@ -467,4 +467,11 @@ def run(test=False, specific_subscribers=None):
         logger.info(f'Finished {end_time.strftime("%m/%d/%Y %H:%M:%S")}, total runtime: {(end_time-start_time).total_seconds()} seconds')
 
 if __name__ == "__main__":
-	run(test=False, specific_subscribers=sys.argv[1:])
+    if('test' in sys.argv):
+        test = True
+        subs = sys.argv[2:]
+    else:
+        test = False
+        subs = sys.argv[1:]
+
+    run(test=test, specific_subscribers=subs)
